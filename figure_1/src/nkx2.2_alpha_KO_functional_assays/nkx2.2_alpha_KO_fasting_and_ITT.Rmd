@@ -1,0 +1,602 @@
+---
+title: "ITT Statistics and plotting"
+author: "Elliott Brooks"
+date: "2/19/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(bayestestR)
+library(pROC)
+library(car)
+
+#install.packages("pROC")
+#install.packages("bayestestR")
+
+
+```
+
+
+
+# data import
+```{r}
+
+ITT_masterlist <- read_csv("/Volumes/Elliott_Brooks/backup/ITT/ITT_masterlist.csv")
+```
+
+# Tidy
+```{r}
+ITT_masterlist_tidy <- ITT_masterlist %>%
+  mutate(simple_geno = if_else(genotype == "nkx2.2flfl" | 
+                                 genotype == "nkx2.2plusplus_gcg.icre",
+                               "controls",
+                               "nkx2.2flfl_gcg.icre")) %>%
+  mutate(simple_geno = factor(simple_geno, 
+                              levels = c("controls", "nkx2.2flfl_gcg.icre"),
+                              labels = c("controls" = "Controls",
+                                         "nkx2.2flfl_gcg.icre" = "Nkx2.2fl/fl\nGcg-iCre")))
+
+
+n_df <- ITT_masterlist_tidy %>%
+  group_by(simple_geno) %>%
+  summarize(n = n()) %>%
+  mutate(n = paste0("n=", n))
+
+#ITT_masterlist_tidy <- ITT_masterlist_tidy %>%
+ # left_join(., n_df)
+
+```
+
+# Fasting BG
+
+## STATISTICS: fasting BG
+
+```{r}
+
+ITT_masterlist_tidy_controls <- ITT_masterlist_tidy %>%
+  dplyr::filter(simple_geno == "Controls")
+
+
+ITT_masterlist_tidy_mutants <- ITT_masterlist_tidy %>%
+  dplyr::filter(simple_geno == "Nkx2.2fl/fl\nGcg-iCre")
+
+
+
+# QQ plot and Shapiro test to check for normality
+
+qqPlot(ITT_masterlist_tidy$time_0)
+
+shapiro.test(ITT_masterlist_tidy$time_0)
+
+
+# check variances
+var.test(ITT_masterlist_tidy_controls$time_0, ITT_masterlist_tidy_mutants$time_0)
+
+
+#Run t-test
+fasting_BG_t.test <- t.test(ITT_masterlist_tidy_controls$time_0, 
+                            ITT_masterlist_tidy_mutants$time_0, 
+                            var.equal = F)
+
+
+fasting_BG_t.test_p.val <- round(as.numeric(fasting_BG_t.test[[3]]), digits = 3)
+```
+
+
+## PLOT: fasting BG
+```{r}
+
+fasting_BG_plot_bar_dot <- ITT_masterlist_tidy %>%
+  group_by(simple_geno) %>%
+  mutate(mean_BG = mean(time_0, na.rm = TRUE),
+         BG_se = sd(time_0, na.rm = TRUE)/sqrt(n())) %>%
+  ggplot(aes(y = mean_BG, x = simple_geno, fill = simple_geno)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_jitter(aes( y = time_0), size = 1, width = .2, color = "#525252") +
+  ggsignif::geom_signif(comparisons = list(c(1,2)),
+                        annotations = fasting_BG_t.test_p.val) +
+  geom_errorbar(aes(ymin = mean_BG - BG_se, ymax = mean_BG + BG_se), width=.2,
+                position=position_dodge(.9)) +
+  geom_text(aes(label = n, y = c(100,50), x = simple_geno), data = n_df, size = 5) +
+  #geom_dotplot(fill = "black", binaxis = "y", stackdir = "center") +
+  cowplot::theme_cowplot() +
+  ylim(0,220) +
+  scale_fill_manual(values = c("Controls" = "#878787",
+                               "Nkx2.2fl/fl\nGcg-iCre" = "#1a9641")) +
+  theme(legend.position = "blank",
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(face = "bold", size = 10),
+        plot.title = element_text(size = 10)) +
+  labs(y = "Fasting Blood Glucose (mg/dL)",
+       title = "6 hour fasting blood glucose in 5 week mice")
+
+
+tiff("/Volumes/Elliott_Brooks/backup/ITT/plots/fasting_BG_plot_bar_dot.tiff", 
+     units = "in", width = 4, height = 4, 
+     res = 300, compression = "lzw")
+fasting_BG_plot_bar_dot
+dev.off()
+
+
+pdf("/Volumes/Elliott_Brooks/backup/ITT/plots/fasting_BG_plot_bar_dot.pdf", 
+     width = 4, height = 4)
+fasting_BG_plot_bar_dot
+dev.off()
+```
+
+
+```{r}
+ITT_masterlist_tidy
+```
+
+
+
+# ITT plotting over time BG
+
+## SUMMARY statistics
+```{r}
+ITT_blood.glucose_SUMM <- ITT_masterlist_tidy %>%
+  dplyr::select(-percent_0, -percent_15, -percent_30, -percent_60, -percent_90, -percent_120) %>%
+  pivot_longer(cols = c(time_0, time_15, time_30, time_60, time_90, time_120),
+               names_to = "time",
+               values_to = "blood_glucose") %>%
+  group_by(simple_geno, time) %>%
+  summarize(n = n(),
+            mean_BG = mean(blood_glucose, na.rm = T),
+            sd = sd(blood_glucose, na.rm =T),
+            se = sd(blood_glucose, na.rm =T)/sqrt(n))
+
+
+```
+
+## STATISTICS
+
+### T-tests
+```{r}
+ITT_masterlist_tidy_controls <- ITT_masterlist_tidy %>%
+  dplyr::filter(simple_geno == "Controls")
+
+
+ITT_masterlist_tidy_mutants <- ITT_masterlist_tidy %>%
+  dplyr::filter(simple_geno == "Nkx2.2fl/fl\nGcg-iCre")
+
+
+
+qqPlot(ITT_masterlist_tidy$time_0)
+
+shapiro.test(ITT_masterlist_tidy$time_0)
+
+
+var.test(ITT_masterlist_tidy_controls$time_0, ITT_masterlist_tidy_mutants$time_0)
+
+BG_time_0_t.test <- t.test(ITT_masterlist_tidy_controls$time_0, ITT_masterlist_tidy_mutants$time_0, var.equal = F)
+
+
+BG_time_0_t.test_p.val <- round(as.numeric(BG_time_0_t.test[[3]]), digits = 3)
+
+
+####
+
+
+#time_15
+
+qqPlot(ITT_masterlist_tidy$time_15)
+
+shapiro.test(ITT_masterlist_tidy$time_15)
+
+
+
+var.test(ITT_masterlist_tidy_controls$time_15, ITT_masterlist_tidy_mutants$time_15)
+
+BG_time_15_t.test <- t.test(ITT_masterlist_tidy_controls$time_15, ITT_masterlist_tidy_mutants$time_15, var.equal = F)
+
+
+BG_time_15_t.test_p.val <- round(as.numeric(BG_time_15_t.test[[3]]), digits = 3)
+
+
+
+####
+
+
+#time_30
+
+qqPlot(ITT_masterlist_tidy$time_30)
+
+shapiro.test(ITT_masterlist_tidy$time_30)
+
+
+
+var.test(ITT_masterlist_tidy_controls$time_30, ITT_masterlist_tidy_mutants$time_30)
+
+BG_time_30_t.test <- t.test(ITT_masterlist_tidy_controls$time_30, ITT_masterlist_tidy_mutants$time_30)
+
+
+BG_time_30_t.test_p.val <- round(as.numeric(BG_time_30_t.test[[3]]), digits = 3)
+
+
+
+#time_60
+
+qqPlot(ITT_masterlist_tidy$time_60)
+
+shapiro.test(ITT_masterlist_tidy$time_60)
+
+
+var.test(ITT_masterlist_tidy_controls$time_60, ITT_masterlist_tidy_mutants$time_60)
+
+BG_time_60_t.test <- t.test(ITT_masterlist_tidy_controls$time_60, ITT_masterlist_tidy_mutants$time_60)
+
+
+BG_time_60_t.test_p.val <- round(as.numeric(BG_time_60_t.test[[3]]), digits = 3)
+
+
+
+#time_90
+
+qqPlot(ITT_masterlist_tidy$time_90)
+
+shapiro.test(ITT_masterlist_tidy$time_90)
+
+
+var.test(ITT_masterlist_tidy_controls$time_90, ITT_masterlist_tidy_mutants$time_90)
+
+BG_time_90_t.test <- t.test(ITT_masterlist_tidy_controls$time_90, ITT_masterlist_tidy_mutants$time_90)
+
+
+BG_time_90_t.test_p.val <- round(as.numeric(BG_time_90_t.test[[3]]), digits = 3)
+
+
+
+#time_120
+
+qqPlot(ITT_masterlist_tidy$time_120)
+
+shapiro.test(ITT_masterlist_tidy$time_120)
+
+
+
+var.test(ITT_masterlist_tidy_controls$time_120, ITT_masterlist_tidy_mutants$time_120)
+
+BG_time_120_t.test <- t.test(ITT_masterlist_tidy_controls$time_120, ITT_masterlist_tidy_mutants$time_120)
+
+
+BG_time_120_t.test_p.val <- round(as.numeric(BG_time_120_t.test[[3]]), digits = 3)
+
+```
+
+
+### Area under the curve
+
+##### all time points
+```{r}
+
+
+# Subset Data into genotype
+
+ITT_blood.glucose_SUMM_controls <- ITT_blood.glucose_SUMM %>%
+  dplyr::filter(simple_geno == "Controls") %>%
+  mutate(time = as.numeric(str_remove(time, "time_"))) %>%
+  arrange(time)
+  
+
+
+ITT_blood.glucose_SUMM_mutants <- ITT_blood.glucose_SUMM %>%
+  dplyr::filter(simple_geno == "Nkx2.2fl/fl\nGcg-iCre") %>%
+  mutate(time = as.numeric(str_remove(time, "time_"))) %>%
+  arrange(time)
+
+```
+
+###### Calculate area under the curve for mean blood glucose and Standard deviation
+```{r}
+
+# Calculate area under the curve for Control data:mean blood glucose and Standard deviation
+
+ITT_blood.glucose_controls_AUC <- bayestestR::auc(x = ITT_blood.glucose_SUMM_controls$time, y = ITT_blood.glucose_SUMM_controls$mean_BG) %>%
+  data.frame() %>%
+  mutate(genotype = "Controls")
+
+ITT_blood.glucose_controls_AUC.sd <- bayestestR::auc(x = ITT_blood.glucose_SUMM_controls$time, y = ITT_blood.glucose_SUMM_controls$sd) %>%
+  data.frame() %>%
+  mutate(genotype = "Controls")
+
+
+# Calculate area under the curve for Mutant data: mean blood glucose and Standard deviation
+
+ITT_blood.glucose_mutants_AUC <- bayestestR::auc(x = ITT_blood.glucose_SUMM_mutants$time, y = ITT_blood.glucose_SUMM_mutants$mean_BG) %>%
+  data.frame() %>%
+  mutate(genotype = "Nkx2.2fl/fl\nGcg-iCre")
+
+ITT_blood.glucose_mutants_AUC.sd <- bayestestR::auc(x = ITT_blood.glucose_SUMM_mutants$time, y = ITT_blood.glucose_SUMM_mutants$sd) %>%
+  data.frame() %>%
+  mutate(genotype = "Nkx2.2fl/fl\nGcg-iCre")
+```
+
+
+###### Combine AUC calculations
+```{r}
+ITT_blood.glucose_combined_AUC.sd <- rbind(ITT_blood.glucose_controls_AUC.sd, ITT_blood.glucose_mutants_AUC.sd)
+
+colnames(ITT_blood.glucose_combined_AUC.sd)[1] <- "AUC.sd"
+
+ITT_blood.glucose_combined_AUC <- rbind(ITT_blood.glucose_controls_AUC, ITT_blood.glucose_mutants_AUC) %>%
+  left_join(., ITT_blood.glucose_combined_AUC.sd) %>%
+  left_join(., unique(dplyr::select(ITT_blood.glucose_SUMM, simple_geno, n)), by = c("genotype" = "simple_geno")) %>%
+  mutate(AUC.sem = AUC.sd/sqrt(n))
+
+colnames(ITT_blood.glucose_combined_AUC)[1] <- "AUC"
+```
+
+
+###### Calculate t test
+-using inputs of mean values, sample size and standard deviation instead of using numeric lists
+```{r}
+##function for t test
+
+##https://stats.stackexchange.com/questions/30394/how-to-perform-two-sample-t-tests-in-r-by-inputting-sample-statistics-rather-tha
+# m1, m2: the sample means
+# s1, s2: the sample standard deviations
+# n1, n2: the same sizes
+# m0: the null value for the difference in means to be tested for. Default is 0. 
+# equal.variance: whether or not to assume equal variance. Default is FALSE. 
+t.test2 <- function(m1,m2,s1,s2,n1,n2,m0=0,equal.variance=FALSE)
+{
+    if( equal.variance==FALSE ) 
+    {
+        se <- sqrt( (s1^2/n1) + (s2^2/n2) )
+        # welch-satterthwaite df
+        df <- ( (s1^2/n1 + s2^2/n2)^2 )/( (s1^2/n1)^2/(n1-1) + (s2^2/n2)^2/(n2-1) )
+    } else
+    {
+        # pooled standard deviation, scaled by the sample sizes
+        se <- sqrt( (1/n1 + 1/n2) * ((n1-1)*s1^2 + (n2-1)*s2^2)/(n1+n2-2) ) 
+        df <- n1+n2-2
+    }      
+    t <- (m1-m2-m0)/se 
+    dat <- c(m1-m2, se, t, 2*pt(-abs(t),df))    
+    names(dat) <- c("Difference of means", "Std Error", "t", "p-value")
+    return(dat) 
+}
+
+
+## calculate ttest
+
+ITT_blood.glucose_combined_AUC_t.test <- t.test2(m1 = ITT_blood.glucose_combined_AUC[1,1], 
+                                                 m2 = ITT_blood.glucose_combined_AUC[2,1], 
+                                          s1 = ITT_blood.glucose_combined_AUC[1,3], 
+                                          s2 = ITT_blood.glucose_combined_AUC[2,3],
+                                          n1 = ITT_blood.glucose_combined_AUC[1,4], 
+                                          n2 = ITT_blood.glucose_combined_AUC[2,4])
+
+
+```
+#### 30-90
+```{r}
+
+
+
+ITT_blood.glucose_SUMM_controls_time_subset <- ITT_blood.glucose_SUMM %>%
+  mutate(time = as.numeric(str_remove(time, "time_"))) %>%
+  dplyr::filter(simple_geno == "Controls",
+                time >= 30 & time <= 90) %>%
+  arrange(time)
+  
+
+
+ITT_blood.glucose_SUMM_mutants_time_subset <- ITT_blood.glucose_SUMM %>%
+    mutate(time = as.numeric(str_remove(time, "time_"))) %>%
+  dplyr::filter(simple_geno == "Nkx2.2fl/fl\nGcg-iCre",
+                time >= 30 & time <= 90) %>%
+  arrange(time)
+```
+
+###### Calculate area under the curve for mean blood glucose and Standard deviation
+```{r}
+
+ITT_blood.glucose_controls_time_subset_AUC <- bayestestR::auc(x = ITT_blood.glucose_SUMM_controls_time_subset$time, 
+                                                              y = ITT_blood.glucose_SUMM_controls_time_subset$mean_BG) %>%
+  data.frame() %>%
+  mutate(genotype = "Controls")
+
+ITT_blood.glucose_controls_time_subset_AUC.sd <- bayestestR::auc(x = ITT_blood.glucose_SUMM_controls_time_subset$time, 
+                                                                 y = ITT_blood.glucose_SUMM_controls_time_subset$sd) %>%
+  data.frame() %>%
+  mutate(genotype = "Controls")
+
+
+
+
+ITT_blood.glucose_mutants_time_subset_AUC <- bayestestR::auc(x = ITT_blood.glucose_SUMM_mutants_time_subset$time, 
+                                                             y = ITT_blood.glucose_SUMM_mutants_time_subset$mean_BG) %>%
+  data.frame() %>%
+  mutate(genotype = "Nkx2.2fl/fl\nGcg-iCre")
+
+ITT_blood.glucose_mutants_time_subset_AUC.sd <- bayestestR::auc(x = ITT_blood.glucose_SUMM_mutants_time_subset$time, 
+                                                                y = ITT_blood.glucose_SUMM_mutants_time_subset$sd) %>%
+  data.frame() %>%
+  mutate(genotype = "Nkx2.2fl/fl\nGcg-iCre")
+```
+
+###### Combine AUC calculations
+```{r}
+ITT_blood.glucose_combined_time_subset_AUC.sd <- rbind(ITT_blood.glucose_controls_time_subset_AUC.sd,
+                                                       ITT_blood.glucose_mutants_time_subset_AUC.sd)
+
+colnames(ITT_blood.glucose_combined_time_subset_AUC.sd)[1] <- "AUC.sd"
+
+ITT_blood.glucose_combined_time_subset_AUC <- rbind(ITT_blood.glucose_controls_time_subset_AUC, ITT_blood.glucose_mutants_time_subset_AUC) %>%
+  left_join(., ITT_blood.glucose_combined_time_subset_AUC.sd) %>%
+  left_join(., unique(dplyr::select(ITT_blood.glucose_SUMM, simple_geno, n)), by = c("genotype" = "simple_geno")) %>%
+  mutate(AUC.sem = AUC.sd/sqrt(n))
+
+
+
+colnames(ITT_blood.glucose_combined_time_subset_AUC)[1] <- "AUC"
+```
+
+###### Calculate t test
+-using inputs of mean values, sample size and standard deviation instead of using numeric lists
+```{r}
+##function for t test
+
+##https://stats.stackexchange.com/questions/30394/how-to-perform-two-sample-t-tests-in-r-by-inputting-sample-statistics-rather-tha
+# m1, m2: the sample means
+# s1, s2: the sample standard deviations
+# n1, n2: the same sizes
+# m0: the null value for the difference in means to be tested for. Default is 0. 
+# equal.variance: whether or not to assume equal variance. Default is FALSE. 
+t.test2 <- function(m1,m2,s1,s2,n1,n2,m0=0,equal.variance=FALSE)
+{
+    if( equal.variance==FALSE ) 
+    {
+        se <- sqrt( (s1^2/n1) + (s2^2/n2) )
+        # welch-satterthwaite df
+        df <- ( (s1^2/n1 + s2^2/n2)^2 )/( (s1^2/n1)^2/(n1-1) + (s2^2/n2)^2/(n2-1) )
+    } else
+    {
+        # pooled standard deviation, scaled by the sample sizes
+        se <- sqrt( (1/n1 + 1/n2) * ((n1-1)*s1^2 + (n2-1)*s2^2)/(n1+n2-2) ) 
+        df <- n1+n2-2
+    }      
+    t <- (m1-m2-m0)/se 
+    dat <- c(m1-m2, se, t, 2*pt(-abs(t),df))    
+    names(dat) <- c("Difference of means", "Std Error", "t", "p-value")
+    return(dat) 
+}
+
+
+## calculate ttest
+
+ITT_blood.glucose_combined_time_subset_AUC_t.test <- t.test2(m1 = ITT_blood.glucose_combined_time_subset_AUC[1,1], 
+                                                 m2 = ITT_blood.glucose_combined_time_subset_AUC[2,1], 
+                                          s1 = ITT_blood.glucose_combined_time_subset_AUC[1,3], 
+                                          s2 = ITT_blood.glucose_combined_time_subset_AUC[2,3],
+                                          n1 = ITT_blood.glucose_combined_time_subset_AUC[1,4], 
+                                          n2 = ITT_blood.glucose_combined_time_subset_AUC[2,4])
+
+ITT_blood.glucose_combined_time_subset_AUC_t.test[4]
+```
+
+
+
+
+## PLOT
+
+### ITT by time
+```{r}
+ITT_blood.glucose_plot <- ITT_blood.glucose_SUMM %>%
+  mutate(time = as.numeric(str_remove(time, "time_")),
+         simple_geno_n = paste0(simple_geno, "\nn = ", n),
+         simple_geno_n = factor(simple_geno_n, levels = c("Controls\nn = 9", "Nkx2.2fl/fl\nGcg-iCre\nn = 8"),
+                                labels = c("Controls\nn = 9", "Nkx2.2fl/fl;Gcg-iCre\nn = 8"))) %>%
+  ggplot(aes(x = time, y = mean_BG, color = simple_geno_n)) +
+  geom_point(size = 4) +
+  geom_line(size = 2) +
+  geom_errorbar(aes(ymin = mean_BG - se, ymax = mean_BG + se), width=2,
+                 position=position_dodge(.9),
+                color = "black") +
+  cowplot::theme_cowplot() +
+  labs(x = "Time Post Insulin Injection (minutes)",
+       y = "Mean Blood Glucose (mg/dL)",
+       color = "Genotype",
+       title = "Insulin Tolerance Test\nFollowing a 6 Hour Fast") +
+  theme(axis.title = element_text(face = "bold")) +
+  scale_color_manual(values = c("#bdbdbd", "#41ab5d")) +
+  scale_x_continuous(breaks = c(0, 15, 30, 60, 90, 120)) +
+  ylim(0, 200)
+  
+  
+
+tiff("/Volumes/Elliott_Brooks/backup/ITT/plots/ITT_blood.glucose_plot.tiff", 
+     units = "in", width = 6, height = 4, 
+     res = 300, compression = "lzw")
+ITT_blood.glucose_plot
+dev.off()
+
+
+pdf("/Volumes/Elliott_Brooks/backup/ITT/plots/ITT_blood.glucose_plot.pdf", 
+     width = 6, height = 4)
+ITT_blood.glucose_plot
+dev.off()
+
+```
+
+### AUC
+
+#### all time points
+```{r}
+ITT_blood.glucose_combined_AUC_plot <- ITT_blood.glucose_combined_AUC %>%
+  mutate(genotype = factor(genotype, levels = c("Controls", "Nkx2.2fl/fl\nGcg-iCre"),
+                                labels = c("Controls", "Nkx2.2fl/fl;\nGcg-iCre"))) %>%
+  ggplot(aes(x = genotype, y = AUC, fill = genotype)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  ggsignif::geom_signif(comparisons = list(c(1,2)),
+                        annotations = paste0("p = ", 
+                                             as.character(signif(ITT_blood.glucose_combined_AUC_t.test[4], 
+                                                                         digits = 3))),
+                        y_position = 10500,
+                        tip_length = 0) +
+  cowplot::theme_cowplot() +
+  labs(x = "Time Post Insulin Injection (minutes)",
+       y = "Area Under the Curve",
+       color = "Genotype") +
+  theme(axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(face = "bold"),
+        legend.position = "none",
+        axis.title.x = element_blank()) +
+  scale_fill_manual(values = c("#bdbdbd", "#41ab5d"))
+  
+
+tiff("/Volumes/Elliott_Brooks/backup/ITT/plots/ITT_blood.glucose_combined_AUC_plot.tiff", 
+     units = "in", width = 3, height = 4, 
+     res = 300, compression = "lzw")
+ITT_blood.glucose_combined_AUC_plot
+dev.off()
+
+
+pdf("/Volumes/Elliott_Brooks/backup/ITT/plots/ITT_blood.glucose_combined_AUC_plot.pdf", 
+     width = 3, height = 4)
+ITT_blood.glucose_combined_AUC_plot
+dev.off()
+```
+
+#### 30-90 min.
+```{r}
+ITT_blood.glucose_combined_AUC_30.90_plot <- ITT_blood.glucose_combined_time_subset_AUC %>%
+  mutate(genotype = factor(genotype, levels = c("Controls", "Nkx2.2fl/fl\nGcg-iCre"),
+                                labels = c("Controls", "Nkx2.2fl/fl;\nGcg-iCre"))) %>%
+  ggplot(aes(x = genotype, y = AUC, fill = genotype)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  ggsignif::geom_signif(comparisons = list(c(1,2)),
+                        annotations = paste0("p = ", 
+                                             as.character(signif(ITT_blood.glucose_combined_time_subset_AUC_t.test[4], 
+                                                                         digits = 3))),
+                        y_position = 5000,
+                        tip_length = 0) +
+  cowplot::theme_cowplot() +
+  labs(x = "Time Post Insulin Injection (minutes)",
+       y = "Area Under the Curve",
+       color = "Genotype") +
+  theme(axis.title = element_text(face = "bold"),
+        axis.text.x = element_text(face = "bold"),
+        legend.position = "none",
+        axis.title.x = element_blank()) +
+  scale_fill_manual(values = c("#bdbdbd", "#41ab5d"))
+  
+
+tiff("/Volumes/Elliott_Brooks/backup/ITT/plots/ITT_blood.glucose_combined_AUC_30.90_plot.tiff", 
+     units = "in", width = 3, height = 4, 
+     res = 300, compression = "lzw")
+ITT_blood.glucose_combined_AUC_30.90_plot
+dev.off()
+
+
+pdf("/Volumes/Elliott_Brooks/backup/ITT/plots/ITT_blood.glucose_combined_AUC_30.90_plot.pdf", 
+     width = 3, height = 4)
+ITT_blood.glucose_combined_AUC_30.90_plot
+dev.off()
+```
+
