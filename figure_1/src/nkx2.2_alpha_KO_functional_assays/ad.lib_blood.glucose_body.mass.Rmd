@@ -1,0 +1,253 @@
+---
+title: "Nkx2.2 alpha KO Ad Lib Blood Glucose and body mass"
+author: "Elliott Brooks"
+date: "8/2/2021"
+output: html_document
+---
+# steup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(cowplot)
+library(ggsignif)
+library(car)
+```
+# Data import
+```{r}
+
+BG.BM_data <- read_csv("/Volumes/Elliott_Brooks/backup/blood_glucose/Blood.Glucose_Mass_masterlist.csv")
+
+```
+
+# tidy
+```{r}
+
+# filter out unusable data
+BG.BM_data <- BG.BM_data %>% 
+  #unite(col = Genotype, c(nkx2.2_fl, gcg_iCRE), sep = "_") %>%
+  dplyr::filter(Genotype != "fl/plus_WT" &
+                Genotype != "fl/plus_NA" & 
+                Genotype != "NA_WT")
+
+# set factor levels
+BG.BM_data <- BG.BM_data %>%
+  mutate(geno_levels = Genotype)
+
+BG.BM_data$geno_levels <- BG.BM_data$geno_levels %>% factor(levels = c("plus/plus_WT", "fl/fl_WT", "plus/plus_CRE",
+                                                                  "fl/plus_CRE", "fl/fl_CRE"),
+                                                       labels = c(1, 2, 3,
+                                                                  4, 5))
+
+BG.BM_data$geno_levels <- as.numeric(BG.BM_data$geno_levels)
+
+
+# rename genotype identification
+BG.BM_data$Genotype <- BG.BM_data$Genotype %>% factor(levels = c("plus/plus_WT", "fl/fl_WT", "plus/plus_CRE",
+                                                                  "fl/plus_CRE", "fl/fl_CRE"),
+                                                       labels = c("Nkx2.2plus/plus", "Nkx2.2fl/fl",
+                                                                  "Nkx2.2plus/plus;Gcg-iCre",
+                                                                  "Nkx2.2fl/plus;Gcg-iCre",
+                                                                  "Nkx2.2fl/fl;Gcg-iCre"))
+
+```
+
+# Summary statistics:
+-calculate mean
+```{r}
+
+BG.BM_data_summ <- BG.BM_data %>% 
+  group_by(geno_levels, Genotype) %>%
+  summarise(count = n(),
+            BG_mean = mean(weaning_blood_glucose, na.rm = T),
+            BG_sd = sd(weaning_blood_glucose, na.rm = T),
+            BM_mean = mean(weaning_weight, na.rm = T),
+            BM_sd = sd(weaning_weight, na.rm = T)) %>%
+  mutate(BG_se = BG_sd/sqrt(count)) %>%
+  mutate(BM_se = BM_sd/sqrt(count))
+
+
+
+
+BG.BM_data_summ <- BG.BM_data_summ %>%
+  mutate(Geno_labels = paste0(Genotype, " (n=", count, ")"))
+
+joiner <- BG.BM_data_summ %>% dplyr::select(Genotype, Geno_labels)
+
+
+BG.BM_data_all <- BG.BM_data %>%
+  left_join(., joiner)
+
+
+
+BG.BM_data_summ$Geno_labels <- fct_reorder(BG.BM_data_summ$Geno_labels, BG.BM_data_summ$geno_levels)
+
+BG.BM_data_all$Geno_labels <- fct_reorder(BG.BM_data_all$Geno_labels, BG.BM_data_all$geno_levels)
+
+
+
+```
+
+# STATISTICS: Glucagon Expression Area
+-t-test was used for these analysis because it is continuous raw data that is roughly normally distributed
+
+## Adlib blood glucose statistics
+```{r}
+#Data was split into separate dataframes by genotype for stats function input
+Mut_BG.BM <- BG.BM_data %>%
+  dplyr::filter(Genotype == "Nkx2.2fl/fl;Gcg-iCre")
+
+CON_BG.BM <- BG.BM_data %>%
+  dplyr::filter(Genotype == "Nkx2.2plus/plus;Gcg-iCre")
+
+MUT_CON_BG.BM <- rbind(Mut_BG.BM, CON_BG.BM)
+
+# QQ plot and Shapiro test to check for normality
+
+qqPlot(MUT_CON_BG.BM$weaning_blood_glucose)
+
+shapiro.test(MUT_CON_BG.BM$weaning_blood_glucose)
+
+
+#T-tests for glucagon expression area between genotypes
+
+#mutant compared to Cre control
+ttest_BG_mut.con <- t.test(x = Mut_BG.BM$weaning_blood_glucose, 
+                                       y = CON_BG.BM$weaning_blood_glucose)
+
+#Create object of the output p-value for use in plotting
+ttest_BG_mut.con_p_value <- round(as.numeric(ttest_BG_mut.con[[3]]), digits = 3)
+
+
+```
+
+## Body Mass statistics
+```{r}
+
+# QQ plot and Shapiro test to check for normality
+
+qqPlot(MUT_CON_BG.BM$weaning_weight)
+
+shapiro.test(MUT_CON_BG.BM$weaning_weight)
+
+
+#T-tests for glucagon expression area between genotypes
+
+#mutant compared to Cre control
+ttest_BM_mut.con <- t.test(x = Mut_BG.BM$weaning_weight, 
+                                       y = CON_BG.BM$weaning_weight)
+
+#Create object of the output p-value for use in plotting
+ttest_BM_mut.con_p_value <- round(as.numeric(ttest_BM_mut.con[[3]]), digits = 3)
+
+
+```
+
+
+
+
+
+# PLOTS: blood glucose
+
+```{r}
+all_BG_plot_bar_dot <- BG.BM_data_all %>%
+  dplyr::filter(Genotype == "Nkx2.2plus/plus;Gcg-iCre" |
+                  Genotype == "Nkx2.2fl/fl;Gcg-iCre") %>%
+  mutate(Geno_labels = factor(Geno_labels, levels = c("Nkx2.2plus/plus;Gcg-iCre (n=13)",
+                                                "Nkx2.2fl/fl;Gcg-iCre (n=11)"),
+                           labels = c("Nkx2.2plus/plus;\nGcg-iCre\n(n=13)",
+                                      "Nkx2.2fl/fl;\nGcg-iCre\n(n=11)"))) %>%
+  group_by(Genotype) %>%
+  mutate(mean_BG = mean(weaning_blood_glucose, na.rm = TRUE),
+         BG_se = sd(weaning_blood_glucose, na.rm = TRUE)/sqrt(n())) %>%
+  ggplot(aes(x = Geno_labels, y = mean_BG, fill = Geno_labels)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_jitter(aes( y = weaning_blood_glucose), size = 1, width = .2, color = "#525252") +
+  geom_signif(comparisons = list(c(1, 2)), 
+              annotations = "NS",
+              y_position = 210) +
+  geom_errorbar(aes(ymin = mean_BG - BG_se, ymax = mean_BG + BG_se), width=.2,
+                position=position_dodge(.9)) +
+  theme_cowplot() +
+  labs(y = "Blood Glucose (mg/dL)",
+       x = "Genotype",
+       title = expression(paste("4 week ", italic("ad libitum"), " Blood Glucose")),
+       fill = "Genotype") +
+  theme(axis.title.y = element_text(face = "bold"),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(face = "bold"),
+        legend.position = "none",
+        aspect.ratio = 1,
+        plot.title = element_text(face = "bold")) +
+  guides(fill = guide_legend(override.aes = list(size = .5))) +
+  scale_y_continuous(limits = c(0,250), 
+                     n.breaks = 6) +
+  scale_fill_manual(values = c("#969696", "#238b45"))
+
+tiff(filename ="/Volumes/Elliott_Brooks/backup/blood_glucose/plots/4wks_adlib_blood.Glucose_plot_allSex_violin_bar_dot.tiff", 
+     units = "in", width = 4, height = 5, 
+     res = 300, compression = "lzw")
+all_BG_plot_bar_dot
+dev.off()
+
+pdf(file = "/Volumes/Elliott_Brooks/backup/blood_glucose/plots/4wks_adlib_blood.Glucose_plot_allSex_violin_bar_dot.pdf", 
+     width = 4, height = 5)
+all_BG_plot_bar_dot
+dev.off()
+
+```
+
+
+# PLOTS: Body mass
+
+```{r}
+all_mass_plot_bar_dot <- BG.BM_data_all %>%
+  dplyr::filter(Genotype == "Nkx2.2plus/plus;Gcg-iCre" |
+                  Genotype == "Nkx2.2fl/fl;Gcg-iCre") %>%
+  mutate(Geno_labels = factor(Geno_labels, levels = c("Nkx2.2plus/plus;Gcg-iCre (n=13)",
+                                                "Nkx2.2fl/fl;Gcg-iCre (n=11)"),
+                           labels = c("Nkx2.2plus/plus;\nGcg-iCre\n(n=13)",
+                                      "Nkx2.2fl/fl;\nGcg-iCre\n(n=11)"))) %>%
+  group_by(Genotype) %>%
+  mutate(mean_mass = mean(weaning_weight, na.rm = TRUE),
+         mass_se = sd(weaning_weight, na.rm = TRUE)/sqrt(n())) %>%
+  ggplot(aes(x = Geno_labels, y = mean_mass, fill = Geno_labels)) +
+  #geom_bar(stat = "identity", 
+   #        position = position_dodge(), 
+    #       color = "black",
+     #      size = 1.5) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_jitter(aes( y = weaning_weight), size = 1, width = .2, color = "#525252") +
+  geom_signif(comparisons = list(c(1, 2)), 
+              annotations = "NS",
+              y_position = 22) +
+  geom_errorbar(aes(ymin = mean_mass - mass_se, ymax = mean_mass + mass_se), width=.2,
+                position=position_dodge(.9)) +
+  theme_cowplot() +
+  labs(y = "Body Mass (g)",
+       x = "Genotype",
+       title = expression(paste("4 week ", italic("ad libitum"), " Body Mass")),
+       fill = "Genotype") +
+  theme(axis.title.y = element_text(face = "bold"),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(face = "bold"),
+        legend.position = "none",
+        aspect.ratio = 1,
+        plot.title = element_text(face = "bold")) +
+  guides(fill = guide_legend(override.aes = list(size = .5))) +
+  scale_y_continuous(limits = c(0,25), 
+                     n.breaks = 6) +
+  scale_fill_manual(values = c("#969696", "#238b45"))
+
+tiff(filename ="/Volumes/Elliott_Brooks/backup/blood_glucose/plots/4wks_adlib_body.mass_plot_allSex_bar_dot.tiff", 
+     units = "in", width = 4, height = 5, 
+     res = 300, compression = "lzw")
+all_mass_plot_bar_dot
+dev.off()
+
+pdf(file ="/Volumes/Elliott_Brooks/backup/blood_glucose/plots/4wks_adlib_body.mass_plot_allSex_bar_dot.pdf", 
+     width = 4, height = 5)
+all_mass_plot_bar_dot
+dev.off()
+
+```
