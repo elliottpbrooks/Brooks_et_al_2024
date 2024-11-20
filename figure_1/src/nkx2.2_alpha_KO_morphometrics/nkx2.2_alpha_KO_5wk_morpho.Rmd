@@ -1,0 +1,635 @@
+---
+title: "Nkx2.2 alpha KO Morpho stats and plots"
+author: "Elliott Brooks"
+date: "2024-10-01"
+output: html_document
+---
+
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#install.packages("imputeTS")
+
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+library(viridis)
+library(imputeTS)
+library(BSDA)
+library(ggsignif)
+library(ggpattern)
+```
+
+
+# Data Import and Tidying
+  - Data from images were compiled from individual data spreadsheets onto the Masterlist data spreadshet below
+```{r import}
+data <- read_csv("/Volumes/Eliott_Brooks/Analysis/nkx_image_data/data/nkx22_gcgicre_5wk_mstrlst.csv", 
+    col_types = cols(Animal = col_character(), 
+        Image = col_character(), Islet = col_character(), 
+        Slide = col_character(), gcg_sst = col_double(), 
+        gcg_sst_prop = col_double(), raw_sst_area = col_double(), 
+        sst_area = col_double(), sst_prop = col_double(), 
+        tom_sst = col_double(), tom_sst_gcg = col_double(), 
+        tom_sst_gcg_mean = col_double(), 
+        tom_sst_low.gcg = col_double(), tom_sst_low.gcg_prop = col_double(), 
+        tom_sst_mean = col_double(),
+        adj_gcg_area = col_double()))
+```
+
+## Set Genotypes as Factors
+```{r}
+#genotypes set as factors and ordered for appropriate genptype order in plots
+data <- data %>%  mutate(Genotype = fct_relevel(Genotype, "nkx2.2flfl", 
+                                                "nkx2.2plusplus_gcg.icre_tomato", 
+                                                "nkx2.2flfl_gcg.icre_tomato"))
+
+
+```
+
+# Number of replicates calculation
+```{r}
+data %>% group_by(Animal, Genotype) %>% summarize(n()) %>% group_by(Genotype) %>% summarize(n())
+```
+
+
+# Islet Expression Area
+- Analysize the phenotypes related to the expression area of Glucagon
+
+## Create summary statistics and tidy for plotting
+```{r}
+#Create summary statitics table for expression area of all hormones measured and islet size
+expression_summ <- data %>% 
+  group_by(Genotype, Animal) %>% #grouped by genotype
+  summarize(Islet_area = mean(islet_area, na.rm = TRUE), 
+            sd_islet_expr = sd(islet_area, na.rm = TRUE)/sqrt(length(islet_area)),
+            GCG = mean(gcg_area, na.rm = TRUE), 
+            se_gcg_expr = sd(gcg_area, na.rm = TRUE)/sqrt(length(gcg_area)),
+            INS = mean(ins_area, na.rm = TRUE), 
+            se_ins_expr = sd(ins_area, na.rm = TRUE)/sqrt(length(ins_area)),
+            SST = mean(sst_area, na.rm = TRUE), 
+            se_sst_expr = sd(sst_area, na.rm = TRUE)/sqrt(length(sst_area)))
+
+#create long form dataframe for plotting
+expression_summ_longmean <- expression_summ %>%
+  #unite means and standard errors from one hormone and genotype
+  unite("islet_area", Islet_area, sd_islet_expr, sep = "_") %>%
+  unite("gcg", GCG, se_gcg_expr, sep = "_") %>%
+  unite("ins", INS, se_ins_expr, sep = "_") %>%
+  unite("sst", SST, se_sst_expr, sep = "_") %>%
+  #pivot based on Hormone/islet area
+  pivot_longer(cols = c(islet_area, gcg, ins, sst), 
+               names_to = "Hormone", 
+               values_to = "expressio_SE") %>%
+  #separate means and SEs
+  separate(col = expressio_SE, into = c("Mean_Expression_Area", "SE"), sep = "_") %>%
+  #redifine data columns as nnumeric (switched to character type during unite step)
+  mutate(Mean_Expression_Area = as.numeric(Mean_Expression_Area),
+         SE = as.numeric(SE))
+
+#define hormone names as factor and order them
+expression_summ_longmean$Hormone <- expression_summ_longmean$Hormone %>% factor( levels = c("islet_area","ins", "gcg","sst"),
+                                                                       labels = c("Islet Area","INS", "GCG","SST"))
+
+
+data
+```
+
+
+## STATISTICS: Glucagon Expression Area
+-t-test was used for these analysis because it is continueous raw data that is roughly normally distributed
+```{r}
+#Data was split into separate dataframes by genotype for stats function input
+Mut_gcg.expression_glucagon <- expression_summ_longmean %>%
+  dplyr::filter(Genotype == "nkx2.2flfl_gcg.icre_tomato",
+                Hormone == "GCG")
+
+CON_gcg.expression_glucagon <- expression_summ_longmean %>%
+  dplyr::filter(Genotype == "nkx2.2plusplus_gcg.icre_tomato",
+                Hormone == "GCG")
+
+flox_gcg.expression_glucagon <- expression_summ_longmean %>%
+  dplyr::filter(Genotype == "nkx2.2flfl",
+                Hormone == "GCG")
+
+
+#T-tests for glucagon expression area between genotypes
+
+#mutant compared to Cre control
+ttest_gcg.expression_mut.con <- t.test(x = Mut_gcg.expression_glucagon$Mean_Expression_Area, 
+                                       y = CON_gcg.expression_glucagon$Mean_Expression_Area)
+
+#Create object of the output p-value for use in plotting
+ttest_gcg.expression_mut.con_answer <- round(as.numeric(ttest_gcg.expression_mut.con[[3]]), digits = 3)
+
+
+#mutant compared to flox control
+ttest_gcg.expression_mut.flox <- t.test(x = Mut_gcg.expression_glucagon$Mean_Expression_Area, 
+                                        y = flox_gcg.expression_glucagon$Mean_Expression_Area)
+
+#Create object of the output p-value for use in plotting
+ttest_gcg.expression_mut.flox_answer <- round(as.numeric(ttest_gcg.expression_mut.flox[[3]]), digits = 4)
+
+
+#flox compared to Cre control
+ttest_gcg.expression_flox.con <- t.test(x = flox_gcg.expression_glucagon$Mean_Expression_Area, 
+                                        y = CON_gcg.expression_glucagon$Mean_Expression_Area)
+
+#Create object of the output p-value for use in plotting
+ttest_gcg.expression_flox.con_answer <- round(as.numeric(ttest_gcg.expression_flox.con[[3]]), digits = 3)
+
+
+
+
+```
+
+
+## PLOT: Gcg expression area 
+```{r,fig.width=10, fig.height=5}
+
+
+horm_expression.GCG.plot <- expression_summ_longmean %>%
+  #filter for glucagon expression area data only
+  dplyr::filter(Hormone == "GCG") %>%
+  group_by(Genotype) %>%
+  summarise(Mean_Expression_Area_se = sd(Mean_Expression_Area)/sqrt(n()),
+            Mean_Expression_Area = mean(Mean_Expression_Area)) %>%
+  #mutate(labelz = "GCG Expression Area") %>%
+  ggplot(aes(x = Genotype, y = Mean_Expression_Area, fill = Genotype)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_jitter(data = dplyr::filter(expression_summ_longmean, Hormone == "GCG"), 
+              aes(x = Genotype, y = Mean_Expression_Area), 
+              size = 1, width = .1, color = "#525252") +
+  #add errorbars
+  geom_errorbar(aes(ymin = Mean_Expression_Area - Mean_Expression_Area_se, 
+                    ymax = Mean_Expression_Area + Mean_Expression_Area_se), width=.2,
+                 position=position_dodge(.9)) +
+  #add p-values and comparison brackets to graph using ggsignif:: package
+  ggsignif::geom_signif(comparisons = list(c(1,2), #bracket between controls
+                                 c(1,3), #bracket between flox control and mutant
+                                 c(2,3)), #bracket between cre control and mutant
+      #call stats objects created in this sections statistics block                  
+      annotations = c(paste0("N.S."),
+                      paste0("p =", ttest_gcg.expression_mut.flox_answer),
+                      paste0("p =", ttest_gcg.expression_mut.con_answer)),
+              y_position = c(4000, 3750, 3500), #determined through trial and error
+              #tip_length = c(.05,.95),
+              textsize = 3) +
+  theme_cowplot() +
+  #scale_fill_brewer(palette = "Paired") + #dont know why this is here...
+  labs(y = expression("Mean GCG Expression Area"~("\u03BCm"^2))) +  #used unicode for greek character and xpression() for superscript
+  theme(axis.title.y = element_text(face = "bold", size = 15),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 15)) +
+  scale_fill_manual(values = c("nkx2.2flfl" = "#bababa", 
+                               "nkx2.2plusplus_gcg.icre_tomato" = "#878787", 
+                               "nkx2.2flfl_gcg.icre_tomato" = "#1a9641")) +
+  ylim(0,4300) #based on the size of the data
+
+  
+tiff(filename = paste0("~/Analysis/nkx_image_data/img/5wk_horm_expression.GCG.plot.STAT.tiff"), 
+     units = "in", width = 7, height = 4, 
+     res = 300, compression = "lzw")
+horm_expression.GCG.plot
+dev.off() 
+
+#Print plot
+horm_expression.GCG.plot
+
+
+pdf(file = "~/Analysis/nkx_image_data/img/5wk_horm_expression.GCG.plot.STAT.pdf", 
+     width = 7, height = 4)
+horm_expression.GCG.plot
+dev.off()
+
+```
+
+
+
+# Glucagon+/Tomato+ cell analysis
+-This analysis aims to determine if the apparnt decrease in the number of tomato-positive alpha cells is significantly decreased in mutants versus cre controls.
+
+## Create Summary statistics and tidy for plotting
+```{r}
+
+gcg.tom_summ <- data %>%
+  mutate(gcg.tom_sum = (gcg_sum*(1-gcg_only_prop))) %>% #Easier than adding up all te columns
+  group_by(Genotype) %>%
+  summarise(gcg.tom_mean = mean(gcg.tom_sum, na.rm = TRUE), 
+            gcg.tom_SE = sd(gcg.tom_sum, na.rm = TRUE)/sqrt(length(gcg.tom_sum)))
+
+
+write_csv(gcg.tom_summ, "~/Analysis/nkx_image_data/data/gcg.tom_summ.csv")
+
+gcg.tom_summ_rep <- data %>%
+  mutate(gcg.tom_sum = (gcg_sum*(1-gcg_only_prop))) %>% #Easier than adding up all te columns
+  group_by(Genotype, Animal) %>%
+  summarise(gcg.tom_mean = mean(gcg.tom_sum, na.rm = TRUE), 
+            gcg.tom_SE = sd(gcg.tom_sum, na.rm = TRUE)/sqrt(length(gcg.tom_sum)))
+
+
+write_csv(gcg.tom_summ, "~/Analysis/nkx_image_data/data/gcg.tom_summ.csv")
+
+```
+
+## STATISTICS: Glucagon+/Tomato+ cell analysis
+```{r}
+#calculate gcg.tom numbers per islet
+gcg.tom_stat <- data %>%
+  mutate(gcg.tom_sum = (gcg_sum*(1-gcg_only_prop)))
+
+#Data was split into separate dataframes by genotype for stats function input
+Mut_gcg.TOM <- gcg.tom_summ_rep %>%
+  dplyr::filter(Genotype == "nkx2.2flfl_gcg.icre_tomato")
+
+
+CON_gcg.TOM <- gcg.tom_summ_rep %>%
+  dplyr::filter(Genotype == "nkx2.2plusplus_gcg.icre_tomato")
+
+flox_gcg.TOM <- gcg.tom_summ_rep %>%
+  dplyr::filter(Genotype == "nkx2.2flfl")
+
+
+#T-test comparing the number of GCG+/TOM+ cells per islet
+
+##mutant vs cre control
+ttest_gcg.TOM_mut.con <- t.test(x = Mut_gcg.TOM$gcg.tom_mean, y = CON_gcg.TOM$gcg.tom_mean)
+
+#Create object of the output p-value for use in plotting
+ttest_gcg.TOM_mut.con_answer <-as.numeric(round(ttest_gcg.TOM_mut.con[[3]], digits = 4))
+
+
+#print p-values
+paste0("The difference in the Number of Glucagon+/Tomato+ per Islet between the mutant and Cre control is statistically significant with a p-value of ", ttest_gcg.TOM_mut.con_answer)
+```
+
+## PLOT: Glucagon+/Tomato+ cell per islets
+```{r}
+gcg.tom_summ.plot <- gcg.tom_summ_rep %>%
+  dplyr::filter(Genotype != "nkx2.2flfl") %>%
+  group_by(Genotype) %>%
+  summarise(gcg.tom_se = sd(gcg.tom_mean)/sqrt(n()),
+            gcg.tom_mean = mean(gcg.tom_mean)) %>%
+  ggplot(aes(x = fct_relevel(Genotype, "nkx2.2plusplus_gcg.icre_tomato", "nkx2.2flfl_gcg.icre_tomato"),
+             y = gcg.tom_mean, fill = Genotype)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+    geom_signif(comparisons = list(c(1,2)),
+      annotations = paste0("p<", ttest_gcg.TOM_mut.con_answer),
+              y_position = c(45),
+              tip_length = c(.05,.6),
+              textsize = 3) +
+  geom_jitter(data = dplyr::filter(gcg.tom_summ_rep, Genotype != "nkx2.2flfl"), 
+              aes(x = Genotype, y = gcg.tom_mean), size = 2, width = .1, color = "#525252") +
+  geom_errorbar(aes(ymin = gcg.tom_mean - gcg.tom_se, ymax = gcg.tom_mean + gcg.tom_se), width=.2,
+                position=position_dodge(.9)) +
+  theme_cowplot() +
+  theme(axis.title = element_text(face = "bold"),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text = element_text(face = "bold"),
+        legend.position = "none") +
+  labs(y = "Avg. # GCG+/TOM+ \nCells per Islet") +
+  scale_fill_manual(values = c("nkx2.2plusplus_gcg.icre_tomato" = "#878787",
+                               "nkx2.2flfl_gcg.icre_tomato" = "#1a9641")) +
+  ylim(0,50)
+
+
+tiff(filename = paste0("~/Analysis/nkx_image_data/img/5wk_gcg.tom_summ.plot.stats.tiff"), 
+     units = "in", width = 3, height = 4, 
+     res = 300, compression = "lzw")
+gcg.tom_summ.plot
+dev.off()
+
+#print plot
+gcg.tom_summ.plot
+
+
+pdf(file = "~/Analysis/nkx_image_data/img/5wk_gcg.tom_summ.plot.stats.pdf", 
+      width = 3, height = 4)
+gcg.tom_summ.plot
+dev.off()
+
+```
+
+
+# Bihormonal Cell Analysis
+- These analysis calculated and plot the occurances of Glucagon/Insulin and Glucagon/Somatostatin Bihormonal cells found in the 5wk old mouse islets.
+
+## INS/GCG: Create summary statistics and tidy for plotting
+```{r}
+#Replace NAs with zeros
+data_no_na <- na_replace(data, fill = 0)
+
+#Create data frame of INS/GCG data only
+bihorm_ins_gcg <- data_no_na %>%
+  #create combined column of count of all ins/gcg bihorm cells
+  mutate(all_gcg_ins = tom_ins_gcg + `tom_ins_low-gcg`,
+         #create column of proportion of glucagon cells that are ins/gcg bihormonal
+         gcg_ins_bihorm = all_gcg_ins / (gcg_sum*(1-gcg_only_prop))) %>% 
+  #filter out any SST data
+  dplyr::filter(str_detect(Stain, "ins")) %>%
+  #refine dataframe by including only pertinent columns
+  dplyr::select(Genotype, Animal, all_gcg_ins, gcg_sum, gcg_ins_bihorm) %>%
+  #convert any NaNs computed from calulations into zeros
+  mutate_if(is.numeric, funs(ifelse(is.na(gcg_ins_bihorm), 0, .)))
+
+
+######proportion of bihorm cells calcs
+
+#compute summary statistics for the proportion of glucagon cells that are ins/gcg bihormonal
+bihorm_ins_gcg_prop <- bihorm_ins_gcg %>% 
+  group_by(Genotype) %>% 
+  summarize(Percentage_bihorm_cells = mean(gcg_ins_bihorm),
+            SE = sd(gcg_ins_bihorm, na.rm = TRUE)/sqrt(length(gcg_ins_bihorm))) %>%
+  mutate(Hormone = "GCG+/INS+\nTOM+")
+
+
+########cells per islet calcs
+
+#count the number of islets per genotype
+bihorm_ins_gcg_isletNum <- bihorm_ins_gcg %>% 
+  group_by(Genotype, Animal) %>%
+  summarize(islet_number = n())
+
+#add islet count to main ins/gcg dataframe
+bihorm_ins_gcg_BYislet <- bihorm_ins_gcg %>% left_join(., bihorm_ins_gcg_isletNum, by = c("Genotype", "Animal"))
+
+#calculate the summary statistics for number of ins/gcg bihormonal cells per islet
+bihorm_ins_gcg_BYislet_summ <- bihorm_ins_gcg_BYislet %>% 
+  group_by(Genotype, Animal) %>% 
+  summarize(bihorm.per.islet = sum(all_gcg_ins)/islet_number,
+            SE_bihorm.per.iselt =  sd(all_gcg_ins, na.rm = TRUE)/sqrt(length(all_gcg_ins))) %>%
+  unique()
+
+
+
+#Code not used in final analysis
+
+
+
+
+#ins_gcg_bihorm_prop.plot <- ins_gcg_bihorm_plotting_df %>%
+ # dplyr::select(Genotype, Percentage_bihorm_cells) %>%
+ # ggplot(aes(x = Genotype, y = Percentage_bihorm_cells, fill = Genotype)) +
+ # geom_bar(stat = "identity", position = position_dodge()) +
+ # theme_cowplot() +
+ # theme(axis.text.x = element_text(angle = -45, hjust = 0)) +
+ # scale_fill_brewer(palette = "YlGnBu")
+```
+
+## STATISTICS: INS/GCG Bihormonal cells
+```{r}
+#using dataframe from above calculate standard deviations from proportions column
+bihorm_ins_gcg_stats_summ <- bihorm_ins_gcg %>%
+  group_by(Genotype, Animal) %>% 
+  summarise(sd_ins.gcg.bihorm = sd(gcg_ins_bihorm, na.rm = TRUE),
+            mean_all_gcg_ins = mean(all_gcg_ins))
+
+#create dataframe with only mutant data
+Mut_ins.gcg.bihorm <- bihorm_ins_gcg_stats_summ %>%
+  dplyr::filter(Genotype == "nkx2.2flfl_gcg.icre_tomato")
+
+#create dataframe with only cre control data
+CON_ins.gcg.bihorm <- bihorm_ins_gcg_stats_summ %>%
+  dplyr::filter(Genotype == "nkx2.2plusplus_gcg.icre_tomato")
+
+
+
+#T-test comparing the number of ins/gcg bihormonal cells in each islet
+
+##mutant vs cre control
+ttest_ins.gcg.bihorm_mut.con <- t.test(x = Mut_ins.gcg.bihorm$mean_all_gcg_ins, y = CON_ins.gcg.bihorm$mean_all_gcg_ins)
+
+##Create object of the output p-value for use in plotting
+ttest_ins.gcg.bihorm_mut.con_answer <- round(as.numeric(ttest_ins.gcg.bihorm_mut.con[[3]]), digits = 3)
+
+
+#Wilcoxen comparing the number of ins/gcg bihormonal cells in each islet
+
+wilcox_ins.gcg.bihorm_mut.con <- wilcox.test(x = Mut_ins.gcg.bihorm$mean_all_gcg_ins, y = CON_ins.gcg.bihorm$mean_all_gcg_ins)
+
+wilcox_ins.gcg.bihorm_mut.con_answer <- round(as.numeric(wilcox_ins.gcg.bihorm_mut.con[[3]]), digits = 4)
+
+
+```
+
+## SST/GCG: Create summary statistics and tidy for plotting
+```{r}
+#Create data frame of SST/GCG data only
+bihorm_sst_gcg <- data_no_na %>% 
+  #create combined column of count of all sst/gcg bihorm cells
+  mutate(all_gcg_sst =tom_sst_gcg + tom_sst_low.gcg, 
+         #create column of proportion of glucagon cells that are sst/gcg bihormonal
+         gcg_sst_bihorm = all_gcg_sst / (gcg_sum*(1-gcg_only_prop))) %>%
+  #filter out any INS data
+  dplyr::filter(str_detect(Stain, "sst")) %>%
+  #refine dataframe by including only pertinent columns
+  dplyr::select(Genotype, Animal, all_gcg_sst, gcg_sum, gcg_sst_bihorm) %>%
+  #convert any NaNs computed from calulations into zeros
+  mutate_if(is.numeric, funs(ifelse(is.na(gcg_sst_bihorm), 0, .)))
+
+
+
+######proportion of bihorm cells calcs
+
+#compute summary statistics for the proportion of glucagon cells that are sst/gcg bihormonal
+bihorm_sst_gcg_prop <- bihorm_sst_gcg %>% 
+  group_by(Genotype) %>% 
+  summarize(Percentage_bihorm_cells = mean(gcg_sst_bihorm),            
+            SE = sd(gcg_sst_bihorm, na.rm = TRUE)/sqrt(length(gcg_sst_bihorm))) %>%
+  mutate(Hormone = "GCG+/SST+\nTOM+")
+
+
+
+
+########cells per islet calcs
+
+#count the number of islets per genotype
+bihorm_sst_gcg_isletNum <- bihorm_sst_gcg %>% 
+  group_by(Genotype, Animal) %>%
+  summarize(islet_number = n())
+
+#add islet count to main ins/gcg dataframe
+bihorm_sst_gcg_BYislet <- bihorm_sst_gcg %>% left_join(., bihorm_sst_gcg_isletNum, by = c("Genotype", "Animal"))
+
+#calculate the summary statistics for number of ins/gcg bihormonal cells per islet
+bihorm_sst_gcg_BYislet_summ <- bihorm_sst_gcg_BYislet %>% 
+  group_by(Genotype, Animal) %>% 
+  summarize(bihorm.per.islet = sum(all_gcg_sst)/islet_number,
+            SE_bihorm.per.iselt =  sd(all_gcg_sst, na.rm = TRUE)/sqrt(length(all_gcg_sst))) %>%
+  unique()
+
+```
+
+## STATISTICS: SST/GCG Bihormonal cells
+```{r}
+#using dataframe from above calculate standard deviations from proportions column
+bihorm_sst_gcg_stats_summ <- bihorm_sst_gcg %>%
+  group_by(Genotype, Animal) %>% 
+  summarise(sd_sst.gcg.bihorm = sd(gcg_sst_bihorm, na.rm = TRUE),
+            mean_all_gcg_sst = mean(all_gcg_sst))
+
+#create dataframe with only mutant data
+Mut_sst.gcg.bihorm <- bihorm_sst_gcg_stats_summ %>%
+  dplyr::filter(Genotype == "nkx2.2flfl_gcg.icre_tomato")
+
+#create dataframe with only cre control data
+CON_sst.gcg.bihorm <- bihorm_sst_gcg_stats_summ %>%
+  dplyr::filter(Genotype == "nkx2.2plusplus_gcg.icre_tomato")
+
+
+
+
+
+#T-test comparing the number of sst/gcg bihormonal cells in each islet
+
+##mutant vs cre control
+ttest_sst.gcg.bihorm_mut.con <- t.test(x = Mut_sst.gcg.bihorm$mean_all_gcg_sst, y = CON_sst.gcg.bihorm$mean_all_gcg_sst)
+
+##Create object of the output p-value for use in plotting
+ttest_sst.gcg.bihorm_mut.con_answer <- round(as.numeric(ttest_sst.gcg.bihorm_mut.con[[3]]), digits = 4)
+
+
+
+#Wilcoxen comparing the number of sst/gcg bihormonal cells in each islet
+
+wilcox_sst.gcg.bihorm_mut.con <- wilcox.test(x = Mut_sst.gcg.bihorm$mean_all_gcg_sst, y = CON_sst.gcg.bihorm$mean_all_gcg_sst)
+
+wilcox_sst.gcg.bihorm_mut.con_answer <- round(as.numeric(wilcox_sst.gcg.bihorm_mut.con[[3]]), digits = 3)
+
+
+
+```
+
+
+## PLOT: INS/GCG bihormonal cells
+```{r}
+
+#plot
+INS.bihomr_byIslet_plotting.plot_stripe <- bihorm_ins_gcg_BYislet_summ %>%
+  #filter out flox control because it doesnt express tomato
+  dplyr::filter(Genotype != "nkx2.2flfl") %>%
+   group_by(Genotype) %>%
+  summarize(bihorm.per.islet_mean = mean(bihorm.per.islet),
+            se_bihorm.per.islet = sd(bihorm.per.islet)/sqrt(n())) %>%
+  ggplot(aes(x = Genotype, y = bihorm.per.islet_mean,
+             #reorder genotypes so cre control bar is first
+             fill = fct_relevel(Genotype, "nkx2.2plusplus_gcg.icre_tomato", "nkx2.2flfl_gcg.icre_tomato"))) +
+ geom_bar_pattern(aes(pattern = Genotype,
+                      pattern_color = Genotype,
+                      pattern_fill = Genotype),
+           stat = "identity", 
+           #pattern_fill = "black",
+           pattern_angle = 45,
+           pattern_density = 0.25,
+           pattern_spacing = 0.1,
+             #fill = "#ffffff",
+           position = position_dodge()) +  
+  geom_jitter(data = dplyr::filter(bihorm_ins_gcg_BYislet_summ, Genotype != "nkx2.2flfl"), 
+              aes(x = Genotype, y = bihorm.per.islet), size = 2, width = .1, height = .1, color = "#525252") +
+  #add errorbars
+  geom_errorbar(aes(ymin = bihorm.per.islet_mean - se_bihorm.per.islet, 
+                    ymax = bihorm.per.islet_mean + se_bihorm.per.islet), 
+                width=.2,
+                position=position_dodge(.9)) +
+  #add p-values
+  geom_signif(comparisons = list(c(1,2)),
+              annotations = paste0("p=", wilcox_ins.gcg.bihorm_mut.con_answer),
+              tip_length = c(.8,.02),
+              textsize = 4) +
+  theme_cowplot() +
+  theme(axis.title = element_text(face = "bold"),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank()) +
+  labs(x = "GCG+/INS+\nTOM+",
+       y = "Number of INS+/GCG+ Cells per Islet") +
+  scale_fill_manual(values = c("nkx2.2plusplus_gcg.icre_tomato" = "#878787",
+                               "nkx2.2flfl_gcg.icre_tomato" = "#1a9641")) +
+  scale_pattern_manual(values = c("nkx2.2plusplus_gcg.icre_tomato" = "none", 
+                                  "nkx2.2flfl_gcg.icre_tomato" = "stripe")) +
+  scale_pattern_color_manual(values = c("nkx2.2plusplus_gcg.icre_tomato" = "#ffffff",
+                                       "nkx2.2flfl_gcg.icre_tomato" = "#8c96c6"))  +
+  scale_pattern_fill_manual(values = c("nkx2.2plusplus_gcg.icre_tomato" = "#ffffff",
+                                       "nkx2.2flfl_gcg.icre_tomato" = "#8c96c6")) +
+  scale_y_continuous(breaks = c(0, 1, 2, 3))
+
+#export plot
+tiff(filename = paste0("~/Analysis/nkx_image_data/img/5wk_INS_bihorm_byIslet_plotting.plot.STAT.tiff"), 
+     units = "in", width = 3, height = 4, 
+     res = 300, compression = "lzw")
+INS.bihomr_byIslet_plotting.plot_stripe
+dev.off()
+
+pdf(file = "~/Analysis/nkx_image_data/img/5wk_INS_bihorm_byIslet_plotting.plot.STAT.pdf", 
+    width = 3, height = 4)
+INS.bihomr_byIslet_plotting.plot_stripe
+dev.off()
+```
+
+## PLOT: SST/GCG bihormonal cells
+```{r}
+
+#plot
+SST.bihomr_byIslet_plotting.plot_stripe <- bihorm_sst_gcg_BYislet_summ %>%
+  #filter our flox control data
+  dplyr::filter(Genotype != "nkx2.2flfl") %>%
+  group_by(Genotype) %>%
+  summarize(bihorm.per.islet_mean = mean(bihorm.per.islet),
+            se_bihorm.per.islet = sd(bihorm.per.islet)/sqrt(n())) %>%
+  ggplot(aes(x = Genotype, y = bihorm.per.islet_mean, 
+             fill = fct_relevel(Genotype, "nkx2.2plusplus_gcg.icre_tomato", "nkx2.2flfl_gcg.icre_tomato"))) +
+geom_bar_pattern(aes(pattern = Genotype,
+                      pattern_color = Genotype,
+                      pattern_fill = Genotype),
+           stat = "identity", 
+           #pattern_fill = "black",
+           pattern_angle = 45,
+           pattern_density = 0.25,
+           pattern_spacing = 0.1,
+             #fill = "#ffffff",
+           position = position_dodge()) +
+  geom_jitter(data = dplyr::filter(bihorm_sst_gcg_BYislet_summ, Genotype != "nkx2.2flfl"), 
+              aes(x = Genotype, y = bihorm.per.islet), size = 2, width = .1, height = .1, color = "#525252") +
+  #add errorbars
+  geom_errorbar(aes(ymin = bihorm.per.islet_mean - se_bihorm.per.islet, 
+                    ymax = bihorm.per.islet_mean + se_bihorm.per.islet), width=.2,
+                position=position_dodge(.9)) +
+  #add p-values
+  geom_signif(comparisons = list(c(1,2)),
+              annotations = paste0("p=", wilcox_sst.gcg.bihorm_mut.con_answer),
+              tip_length = c(.9,.02),
+              textsize = 4) +
+  theme_cowplot() +
+  theme(axis.title = element_text(face = "bold"),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank()) +
+  labs(x = "GCG+/SST+\nTOM+",
+       y = "Number of SST+/GCG+ Cells per Islet") +
+  scale_fill_manual(values = c("nkx2.2plusplus_gcg.icre_tomato" = "#878787",
+                               "nkx2.2flfl_gcg.icre_tomato" = "#1a9641"))  +
+  scale_pattern_manual(values = c("nkx2.2plusplus_gcg.icre_tomato" = "none", 
+                                  "nkx2.2flfl_gcg.icre_tomato" = "stripe")) +
+  scale_pattern_color_manual(values = c("nkx2.2plusplus_gcg.icre_tomato" = "#ffffff",
+                                       "nkx2.2flfl_gcg.icre_tomato" = "#fe9929"))  +
+  scale_pattern_fill_manual(values = c("nkx2.2plusplus_gcg.icre_tomato" = "#ffffff",
+                                       "nkx2.2flfl_gcg.icre_tomato" = "#fe9929")) +
+  scale_y_continuous(breaks = c(0,1, 2,  3))
+
+#export plot
+tiff(filename = paste0("~/Analysis/nkx_image_data/img/5wk_SST_Bihorm_byIslet_plotting.plot.STAT_stripe.tiff"), 
+     units = "in", width = 3, height = 4, 
+     res = 300, compression = "lzw")
+SST.bihomr_byIslet_plotting.plot_stripe
+dev.off()
+
+pdf(file = "~/Analysis/nkx_image_data/img/5wk_SST_Bihorm_byIslet_plotting.plot.STAT_stripe.pdf", 
+     width = 3, height = 4)
+SST.bihomr_byIslet_plotting.plot_stripe
+dev.off()
+
+```
