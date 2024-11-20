@@ -1,0 +1,130 @@
+---
+title: "nkx2.2 alpha KO adult NKX2.2 IF analsyis"
+author: "Elliott Brooks"
+date: "10/28/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+library(viridis)
+library(imputeTS)
+library(BSDA)
+library(ggsignif)
+library(car)
+```
+
+
+#data import
+
+```{r}
+nkx2_2_fl_gcg_nkx22_islet_score <- read_csv("/Volumes/Elliott_Brooks/backup/nkx_image_data/data/nkx2.2_fl_22wk_gcg_nkx22_islet_score.csv") 
+```
+# mafb expression in gcg tom cells: calculations, Summaries and Stats
+
+#calculation
+-calculate the proportion of GCG positive cells that co-express NKX2.2
+```{r}
+nkx2_2_fl_gcg_nkx22_islet_score_calcs <- nkx2_2_fl_gcg_nkx22_islet_score %>%
+  dplyr::filter(!is.na(GCGpos_nkxpos)) %>%
+  mutate(nkx22_gcg_proportion = GCGpos_nkxpos/(GCGpos_nkxpos+GCGpos_nkxneg)) %>%
+  dplyr::filter(!is.nan(nkx22_gcg_proportion))
+```
+
+#Summaries
+-Calculate the mean NKX2.2+/GCG+ cell proportion for each mouse
+```{r}
+
+nkx2_2_fl_gcg_nkx22_islet_score_SUMM <- nkx2_2_fl_gcg_nkx22_islet_score_calcs %>%
+  group_by(genotype, mouse) %>%
+  summarize(nkx22_gcg_proportion_mean = mean(nkx22_gcg_proportion),
+            nkx22_gcg_proportion_sd = sd(nkx22_gcg_proportion),
+            nkx22_gcg_proportion_se = sd(nkx22_gcg_proportion)/sqrt(n()))
+  
+```
+
+#STATISTICS:
+-Compare proportion of NKX2.2 positive alpha cells between Nkx2.2 alpha KO and Gcg-iCre control.
+-Validates the Nkx2.2 alpha cell KO
+```{r}
+
+#Data was split into separate dataframes by genotype for stats function input
+Mut_nkx.expression <- nkx2_2_fl_gcg_nkx22_islet_score_SUMM %>%
+  dplyr::filter(genotype == "Mut")
+
+CON_nkx.expression <- nkx2_2_fl_gcg_nkx22_islet_score_SUMM %>%
+  dplyr::filter(genotype == "con")
+
+########
+
+
+# QQ plot and Shapiro test to check for normality
+
+qqPlot(nkx2_2_fl_gcg_nkx22_islet_score_SUMM$nkx22_gcg_proportion_mean)
+
+shapiro.test(nkx2_2_fl_gcg_nkx22_islet_score_SUMM$nkx22_gcg_proportion_mean)
+
+
+# Run t-tests on data
+ttest_nkx.expression.prop_mut.con <- t.test(x = Mut_nkx.expression$nkx22_gcg_proportion_mean, 
+                                             y = CON_nkx.expression$nkx22_gcg_proportion_mean)
+
+
+ttest_nkx.expression.prop_mut.con_p.value <- round(as.numeric(ttest_nkx.expression.prop_mut.con[3]), digits = 5) #print p-value
+
+
+
+```
+
+
+## PLOT: MafB expression in Glucagon+/Tomato+ cells
+```{r}
+nkx22_gcg.tom_summ.plot <- nkx2_2_fl_gcg_nkx22_islet_score_SUMM %>%
+  group_by(genotype) %>%
+  summarize(nkx22_gcg_proportion_se = sd(nkx22_gcg_proportion_mean)/sqrt(n()),
+            nkx22_gcg_proportion_mean = mean(nkx22_gcg_proportion_mean)) %>%
+  ggplot(aes(x = fct_relevel(genotype, "con", "Mut"),
+             y = nkx22_gcg_proportion_mean, fill = genotype)) +
+  geom_bar(stat = "identity", position = position_dodge()) + # bar plot
+  geom_jitter(data = nkx2_2_fl_gcg_nkx22_islet_score_SUMM, 
+              aes(x = genotype, y = nkx22_gcg_proportion_mean), size = 2, width = .1, color = "#525252") +
+   geom_signif(comparisons = list(c(1,2)),
+      annotations = paste0("p =", ttest_nkx.expression.prop_mut.con_p.value), # add p-value annotation
+      tip_length = 0) +
+  geom_errorbar(aes(ymin = nkx22_gcg_proportion_mean - nkx22_gcg_proportion_se, # add errorbars
+                    ymax = nkx22_gcg_proportion_mean + nkx22_gcg_proportion_se), width=.2,
+                position=position_dodge(.9)) +
+  theme_cowplot() +
+  theme(axis.title = element_text(face = "bold"),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text = element_text(face = "bold"),
+        legend.position = "none") +
+  labs(y = "% NKX2.2 Expression in GCG+ Cells") +
+  scale_fill_manual(values = c("con" = "#878787",
+                               "Mut" = "#1a9641")) +
+    scale_y_continuous(labels = scales::percent, limits = c(0,1)) # convert y axis from proportion to percentage
+
+
+
+# Export plots 
+
+tiff(filename = paste0("/Volumes/Elliott_Brooks/backup/nkx_image_data/img/nkx22_gcg.tom_summ.plot.tiff"), 
+     units = "in", width = 3, height = 4, 
+     res = 300, compression = "lzw")
+nkx22_gcg.tom_summ.plot
+dev.off()
+
+
+pdf(file = paste0("/Volumes/Elliott_Brooks/backup/nkx_image_data/img/nkx22_gcg.tom_summ.plot.pdf"), 
+     width = 3, height = 4)
+nkx22_gcg.tom_summ.plot
+dev.off()
+
+
+```

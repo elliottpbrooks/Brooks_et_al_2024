@@ -10,7 +10,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-#install.packages("imputeTS")
+#install.packages("car")
 
 library(tidyverse)
 library(ggplot2)
@@ -20,13 +20,14 @@ library(imputeTS)
 library(BSDA)
 library(ggsignif)
 library(ggpattern)
+library(car)
 ```
 
 
 # Data Import and Tidying
-  - Data from images were compiled from individual data spreadsheets onto the Masterlist data spreadshet below
+  - Data from images were compiled from individual data spreadsheets onto the compiled data spreadsheet below
 ```{r import}
-data <- read_csv("/Volumes/Eliott_Brooks/Analysis/nkx_image_data/data/nkx22_gcgicre_5wk_mstrlst.csv", 
+data <- read_csv("/Volumes/Elliott_Brooks/backup/nkx_image_data/data/nkx22_gcgicre_5wk_mstrlst.csv", 
     col_types = cols(Animal = col_character(), 
         Image = col_character(), Islet = col_character(), 
         Slide = col_character(), gcg_sst = col_double(), 
@@ -60,17 +61,17 @@ data %>% group_by(Animal, Genotype) %>% summarize(n()) %>% group_by(Genotype) %>
 
 ## Create summary statistics and tidy for plotting
 ```{r}
-#Create summary statitics table for expression area of all hormones measured and islet size
+#Create summary statistics table for expression area of all hormones measured and islet size
 expression_summ <- data %>% 
   group_by(Genotype, Animal) %>% #grouped by genotype
   summarize(Islet_area = mean(islet_area, na.rm = TRUE), 
-            sd_islet_expr = sd(islet_area, na.rm = TRUE)/sqrt(length(islet_area)),
+            sd_islet_expr = sd(islet_area, na.rm = TRUE)/sqrt(sum(!is.na(islet_area))),
             GCG = mean(gcg_area, na.rm = TRUE), 
-            se_gcg_expr = sd(gcg_area, na.rm = TRUE)/sqrt(length(gcg_area)),
+            se_gcg_expr = sd(gcg_area, na.rm = TRUE)/sqrt(sum(!is.na(gcg_area))),
             INS = mean(ins_area, na.rm = TRUE), 
-            se_ins_expr = sd(ins_area, na.rm = TRUE)/sqrt(length(ins_area)),
+            se_ins_expr = sd(ins_area, na.rm = TRUE)/sqrt(sum(!is.na(ins_area))),
             SST = mean(sst_area, na.rm = TRUE), 
-            se_sst_expr = sd(sst_area, na.rm = TRUE)/sqrt(length(sst_area)))
+            se_sst_expr = sd(sst_area, na.rm = TRUE)/sqrt(sum(!is.na(sst_area))))
 
 #create long form dataframe for plotting
 expression_summ_longmean <- expression_summ %>%
@@ -113,6 +114,13 @@ CON_gcg.expression_glucagon <- expression_summ_longmean %>%
 flox_gcg.expression_glucagon <- expression_summ_longmean %>%
   dplyr::filter(Genotype == "nkx2.2flfl",
                 Hormone == "GCG")
+
+
+# QQ plot and Shapiro test to check for normality
+
+qqPlot(expression_summ_longmean$Mean_Expression_Area)
+
+shapiro.test(expression_summ_longmean$Mean_Expression_Area)
 
 
 #T-tests for glucagon expression area between genotypes
@@ -190,7 +198,7 @@ horm_expression.GCG.plot <- expression_summ_longmean %>%
   ylim(0,4300) #based on the size of the data
 
   
-tiff(filename = paste0("~/Analysis/nkx_image_data/img/5wk_horm_expression.GCG.plot.STAT.tiff"), 
+tiff(filename = paste0("/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_horm_expression.GCG.plot.STAT.tiff"), 
      units = "in", width = 7, height = 4, 
      res = 300, compression = "lzw")
 horm_expression.GCG.plot
@@ -199,8 +207,8 @@ dev.off()
 #Print plot
 horm_expression.GCG.plot
 
-
-pdf(file = "~/Analysis/nkx_image_data/img/5wk_horm_expression.GCG.plot.STAT.pdf", 
+# export for illustrator
+pdf(file = "/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_horm_expression.GCG.plot.STAT.pdf", 
      width = 7, height = 4)
 horm_expression.GCG.plot
 dev.off()
@@ -219,19 +227,19 @@ gcg.tom_summ <- data %>%
   mutate(gcg.tom_sum = (gcg_sum*(1-gcg_only_prop))) %>% #Easier than adding up all te columns
   group_by(Genotype) %>%
   summarise(gcg.tom_mean = mean(gcg.tom_sum, na.rm = TRUE), 
-            gcg.tom_SE = sd(gcg.tom_sum, na.rm = TRUE)/sqrt(length(gcg.tom_sum)))
+            gcg.tom_SE = sd(gcg.tom_sum, na.rm = TRUE)/sqrt(sum(!is.na(gcg.tom_sum))))
 
 
-write_csv(gcg.tom_summ, "~/Analysis/nkx_image_data/data/gcg.tom_summ.csv")
+write_csv(gcg.tom_summ, "/Volumes/Elliott_Brooks/backup/nkx_image_data/data/gcg.tom_summ.csv")
 
 gcg.tom_summ_rep <- data %>%
   mutate(gcg.tom_sum = (gcg_sum*(1-gcg_only_prop))) %>% #Easier than adding up all te columns
   group_by(Genotype, Animal) %>%
   summarise(gcg.tom_mean = mean(gcg.tom_sum, na.rm = TRUE), 
-            gcg.tom_SE = sd(gcg.tom_sum, na.rm = TRUE)/sqrt(length(gcg.tom_sum)))
+            gcg.tom_SE = sd(gcg.tom_sum, na.rm = TRUE)/sqrt(sum(!is.na(gcg.tom_sum))))
 
 
-write_csv(gcg.tom_summ, "~/Analysis/nkx_image_data/data/gcg.tom_summ.csv")
+write_csv(gcg.tom_summ, "/Volumes/Elliott_Brooks/backup/nkx_image_data/data/gcg.tom_summ.csv")
 
 ```
 
@@ -251,6 +259,14 @@ CON_gcg.TOM <- gcg.tom_summ_rep %>%
 
 flox_gcg.TOM <- gcg.tom_summ_rep %>%
   dplyr::filter(Genotype == "nkx2.2flfl")
+
+
+# QQ plot and Shapiro test to check for normality
+
+qqPlot(gcg.tom_summ_rep$gcg.tom_mean)
+
+shapiro.test(gcg.tom_summ_rep$gcg.tom_mean)
+
 
 
 #T-test comparing the number of GCG+/TOM+ cells per islet
@@ -297,7 +313,7 @@ gcg.tom_summ.plot <- gcg.tom_summ_rep %>%
   ylim(0,50)
 
 
-tiff(filename = paste0("~/Analysis/nkx_image_data/img/5wk_gcg.tom_summ.plot.stats.tiff"), 
+tiff(filename = paste0("/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_gcg.tom_summ.plot.stats.tiff"), 
      units = "in", width = 3, height = 4, 
      res = 300, compression = "lzw")
 gcg.tom_summ.plot
@@ -307,7 +323,7 @@ dev.off()
 gcg.tom_summ.plot
 
 
-pdf(file = "~/Analysis/nkx_image_data/img/5wk_gcg.tom_summ.plot.stats.pdf", 
+pdf(file = "/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_gcg.tom_summ.plot.stats.pdf", 
       width = 3, height = 4)
 gcg.tom_summ.plot
 dev.off()
@@ -343,7 +359,7 @@ bihorm_ins_gcg <- data_no_na %>%
 bihorm_ins_gcg_prop <- bihorm_ins_gcg %>% 
   group_by(Genotype) %>% 
   summarize(Percentage_bihorm_cells = mean(gcg_ins_bihorm),
-            SE = sd(gcg_ins_bihorm, na.rm = TRUE)/sqrt(length(gcg_ins_bihorm))) %>%
+            SE = sd(gcg_ins_bihorm, na.rm = TRUE)/sqrt(sum(!is.na(gcg_ins_bihorm)))) %>%
   mutate(Hormone = "GCG+/INS+\nTOM+")
 
 
@@ -361,23 +377,12 @@ bihorm_ins_gcg_BYislet <- bihorm_ins_gcg %>% left_join(., bihorm_ins_gcg_isletNu
 bihorm_ins_gcg_BYislet_summ <- bihorm_ins_gcg_BYislet %>% 
   group_by(Genotype, Animal) %>% 
   summarize(bihorm.per.islet = sum(all_gcg_ins)/islet_number,
-            SE_bihorm.per.iselt =  sd(all_gcg_ins, na.rm = TRUE)/sqrt(length(all_gcg_ins))) %>%
+            SE_bihorm.per.iselt =  sd(all_gcg_ins, na.rm = TRUE)/sqrt(sum(!is.na(all_gcg_ins)))) %>%
   unique()
 
 
 
-#Code not used in final analysis
 
-
-
-
-#ins_gcg_bihorm_prop.plot <- ins_gcg_bihorm_plotting_df %>%
- # dplyr::select(Genotype, Percentage_bihorm_cells) %>%
- # ggplot(aes(x = Genotype, y = Percentage_bihorm_cells, fill = Genotype)) +
- # geom_bar(stat = "identity", position = position_dodge()) +
- # theme_cowplot() +
- # theme(axis.text.x = element_text(angle = -45, hjust = 0)) +
- # scale_fill_brewer(palette = "YlGnBu")
 ```
 
 ## STATISTICS: INS/GCG Bihormonal cells
@@ -398,6 +403,13 @@ CON_ins.gcg.bihorm <- bihorm_ins_gcg_stats_summ %>%
 
 
 
+# QQ plot and Shapiro testto check for normality
+
+qqPlot(bihorm_ins_gcg_stats_summ$mean_all_gcg_ins)
+
+shapiro.test(bihorm_ins_gcg_stats_summ$mean_all_gcg_ins)
+
+
 #T-test comparing the number of ins/gcg bihormonal cells in each islet
 
 ##mutant vs cre control
@@ -407,11 +419,6 @@ ttest_ins.gcg.bihorm_mut.con <- t.test(x = Mut_ins.gcg.bihorm$mean_all_gcg_ins, 
 ttest_ins.gcg.bihorm_mut.con_answer <- round(as.numeric(ttest_ins.gcg.bihorm_mut.con[[3]]), digits = 3)
 
 
-#Wilcoxen comparing the number of ins/gcg bihormonal cells in each islet
-
-wilcox_ins.gcg.bihorm_mut.con <- wilcox.test(x = Mut_ins.gcg.bihorm$mean_all_gcg_ins, y = CON_ins.gcg.bihorm$mean_all_gcg_ins)
-
-wilcox_ins.gcg.bihorm_mut.con_answer <- round(as.numeric(wilcox_ins.gcg.bihorm_mut.con[[3]]), digits = 4)
 
 
 ```
@@ -439,7 +446,7 @@ bihorm_sst_gcg <- data_no_na %>%
 bihorm_sst_gcg_prop <- bihorm_sst_gcg %>% 
   group_by(Genotype) %>% 
   summarize(Percentage_bihorm_cells = mean(gcg_sst_bihorm),            
-            SE = sd(gcg_sst_bihorm, na.rm = TRUE)/sqrt(length(gcg_sst_bihorm))) %>%
+            SE = sd(gcg_sst_bihorm, na.rm = TRUE)/sqrt(sum(!is.na(gcg_sst_bihorm)))) %>%
   mutate(Hormone = "GCG+/SST+\nTOM+")
 
 
@@ -459,7 +466,7 @@ bihorm_sst_gcg_BYislet <- bihorm_sst_gcg %>% left_join(., bihorm_sst_gcg_isletNu
 bihorm_sst_gcg_BYislet_summ <- bihorm_sst_gcg_BYislet %>% 
   group_by(Genotype, Animal) %>% 
   summarize(bihorm.per.islet = sum(all_gcg_sst)/islet_number,
-            SE_bihorm.per.iselt =  sd(all_gcg_sst, na.rm = TRUE)/sqrt(length(all_gcg_sst))) %>%
+            SE_bihorm.per.iselt =  sd(all_gcg_sst, na.rm = TRUE)/sqrt(sum(!is.na(all_gcg_sst)))) %>%
   unique()
 
 ```
@@ -481,6 +488,12 @@ CON_sst.gcg.bihorm <- bihorm_sst_gcg_stats_summ %>%
   dplyr::filter(Genotype == "nkx2.2plusplus_gcg.icre_tomato")
 
 
+# QQ plot and Shapiro test to check for normality
+
+qqPlot(bihorm_sst_gcg_stats_summ$mean_all_gcg_sst)
+
+shapiro.test(bihorm_sst_gcg_stats_summ$mean_all_gcg_sst)
+
 
 
 
@@ -491,14 +504,6 @@ ttest_sst.gcg.bihorm_mut.con <- t.test(x = Mut_sst.gcg.bihorm$mean_all_gcg_sst, 
 
 ##Create object of the output p-value for use in plotting
 ttest_sst.gcg.bihorm_mut.con_answer <- round(as.numeric(ttest_sst.gcg.bihorm_mut.con[[3]]), digits = 4)
-
-
-
-#Wilcoxen comparing the number of sst/gcg bihormonal cells in each islet
-
-wilcox_sst.gcg.bihorm_mut.con <- wilcox.test(x = Mut_sst.gcg.bihorm$mean_all_gcg_sst, y = CON_sst.gcg.bihorm$mean_all_gcg_sst)
-
-wilcox_sst.gcg.bihorm_mut.con_answer <- round(as.numeric(wilcox_sst.gcg.bihorm_mut.con[[3]]), digits = 3)
 
 
 
@@ -558,13 +563,13 @@ INS.bihomr_byIslet_plotting.plot_stripe <- bihorm_ins_gcg_BYislet_summ %>%
   scale_y_continuous(breaks = c(0, 1, 2, 3))
 
 #export plot
-tiff(filename = paste0("~/Analysis/nkx_image_data/img/5wk_INS_bihorm_byIslet_plotting.plot.STAT.tiff"), 
+tiff(filename = paste0("/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_INS_bihorm_byIslet_plotting.plot.STAT.tiff"), 
      units = "in", width = 3, height = 4, 
      res = 300, compression = "lzw")
 INS.bihomr_byIslet_plotting.plot_stripe
 dev.off()
 
-pdf(file = "~/Analysis/nkx_image_data/img/5wk_INS_bihorm_byIslet_plotting.plot.STAT.pdf", 
+pdf(file = "/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_INS_bihorm_byIslet_plotting.plot.STAT.pdf", 
     width = 3, height = 4)
 INS.bihomr_byIslet_plotting.plot_stripe
 dev.off()
@@ -621,13 +626,13 @@ geom_bar_pattern(aes(pattern = Genotype,
   scale_y_continuous(breaks = c(0,1, 2,  3))
 
 #export plot
-tiff(filename = paste0("~/Analysis/nkx_image_data/img/5wk_SST_Bihorm_byIslet_plotting.plot.STAT_stripe.tiff"), 
+tiff(filename = paste0("/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_SST_Bihorm_byIslet_plotting.plot.STAT_stripe.tiff"), 
      units = "in", width = 3, height = 4, 
      res = 300, compression = "lzw")
 SST.bihomr_byIslet_plotting.plot_stripe
 dev.off()
 
-pdf(file = "~/Analysis/nkx_image_data/img/5wk_SST_Bihorm_byIslet_plotting.plot.STAT_stripe.pdf", 
+pdf(file = "/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_SST_Bihorm_byIslet_plotting.plot.STAT_stripe.pdf", 
      width = 3, height = 4)
 SST.bihomr_byIslet_plotting.plot_stripe
 dev.off()
