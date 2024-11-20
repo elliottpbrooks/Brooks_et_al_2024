@@ -1,0 +1,190 @@
+---
+title: "Nkx2.2 alpha KO fasting"
+author: "Elliott Brooks"
+date: "2024-10-08"
+output: html_document
+---
+# setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+library(viridis)
+library(imputeTS)
+library(BSDA)
+library(ggsignif)
+library(ggpattern)
+library(car)
+```
+
+# data import
+```{r}
+fasting_6 <- read_csv("/Volumes/Brooks_02/Analysis/nkx2.2_alpha_KO_fasting/raw_data/nkx2.2_alpha_KO_22wk_fasting_6hr_9_23_24.csv") %>%
+  mutate(fasting_length = 6)
+
+fasting_12 <- read_csv("/Volumes/Brooks_02/Analysis/nkx2.2_alpha_KO_fasting/raw_data/nkx2.2_alpha_KO_22wk_fasting_12hr_9_23_24.csv") %>%
+  mutate(fasting_length = 12)
+
+```
+# tidy and combined fasting times
+```{r}
+
+fasting_6_and_12 <- rbind(fasting_6, fasting_12) %>%
+  mutate(genotype = if_else(control == "yes",
+                            "nkx2.2plusplus_gcg.icre_tomato",
+                            if_else(control == "no",
+                            "nkx2.2flfl_gcg.icre_tomato",
+                            "other")))
+
+```
+
+# STATISTICS
+
+## 6 hour fast
+```{r}
+fasting_6_mut <- fasting_6_and_12 %>%
+  dplyr::filter(genotype == "nkx2.2flfl_gcg.icre_tomato",
+                fasting_length == 6)
+
+fasting_6_con <- fasting_6_and_12 %>%
+  dplyr::filter(genotype == "nkx2.2plusplus_gcg.icre_tomato",
+                fasting_length == 6)
+
+
+# QQ plot and Shapiro test to check for normality
+
+qqPlot(fasting_6$blood_glucose)
+
+shapiro.test(fasting_6$blood_glucose)
+
+
+fasting_6_t.test <- t.test(fasting_6_mut$blood_glucose, fasting_6_con$blood_glucose)
+
+fasting_6_t.test_pvalue <- round(fasting_6_t.test[[3]], digits = 2)
+
+```
+
+## 12 hour fast
+```{r}
+fasting_12_mut <- fasting_6_and_12 %>%
+  dplyr::filter(genotype == "nkx2.2flfl_gcg.icre_tomato",
+                fasting_length == 12)
+
+fasting_12_con <- fasting_6_and_12 %>%
+  dplyr::filter(genotype == "nkx2.2plusplus_gcg.icre_tomato",
+                fasting_length == 12)
+
+
+qqPlot(fasting_12$blood_glucose)
+
+shapiro.test(fasting_12$blood_glucose)
+
+
+
+fasting_12_t.test <- t.test(fasting_12_mut$blood_glucose, fasting_12_con$blood_glucose)
+
+fasting_12_t.test_pvalue <- round(fasting_12_t.test[[3]], digits = 2)
+
+```
+
+
+# PLOTS:
+
+## 6 hour fast
+```{r}
+fasting_6_plot <- fasting_6_and_12 %>%
+  dplyr::filter(genotype == "nkx2.2plusplus_gcg.icre_tomato" |
+                  genotype == "nkx2.2flfl_gcg.icre_tomato",
+                fasting_length == 6) %>%
+  mutate(genotype = factor(genotype, levels = c("nkx2.2plusplus_gcg.icre_tomato", 
+                                                "nkx2.2flfl_gcg.icre_tomato"))) %>%
+  group_by(genotype) %>%
+  mutate(mean_BG = mean(blood_glucose, na.rm = TRUE),
+         BG_se = sd(blood_glucose, na.rm = TRUE)/sqrt(n())) %>%
+  ggplot(aes(x = genotype, y = mean_BG, fill = genotype)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_jitter(aes( y = blood_glucose), size = 1, width = .2, color = "#525252") +
+  geom_signif(comparisons = list(c(1, 2)), 
+              annotations = fasting_6_t.test_pvalue,
+              y_position = 155) +
+  geom_errorbar(aes(ymin = mean_BG - BG_se, ymax = mean_BG + BG_se), width=.2,
+                position=position_dodge(.9)) +
+  theme_cowplot() +
+  labs(y = "Blood Glucose (mg/dL)",
+       x = "Genotype",
+       title = "22wk Fasting (6hr) Blood Glucose",
+       fill = "Genotype") +
+  theme(axis.title.y = element_text(face = "bold"),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(face = "bold"),
+        legend.position = "none",
+        aspect.ratio = 1,
+        plot.title = element_text(face = "bold")) +
+  guides(fill = guide_legend(override.aes = list(size = .5))) +
+  scale_y_continuous(limits = c(0,160), 
+                     n.breaks = 6) +
+  scale_fill_manual(values = c("#969696", "#238b45"))
+
+tiff(filename ="/Volumes/Brooks_02/Analysis/nkx2.2_alpha_KO_fasting/results/plots/nkx2.2_alpha_KO_22wk_fasting_6hr_plot.tiff", 
+     units = "in", width = 4, height = 5, 
+     res = 300, compression = "lzw")
+fasting_6_plot
+dev.off()
+
+pdf(file = "/Volumes/Brooks_02/Analysis/nkx2.2_alpha_KO_fasting/results/plots/nkx2.2_alpha_KO_22wk_fasting_6hr_plot.pdf", 
+     width = 4, height = 5)
+fasting_6_plot
+dev.off()
+
+```
+
+## 12 hour fast
+```{r}
+fasting_12_plot <- fasting_6_and_12 %>%
+  dplyr::filter(genotype == "nkx2.2plusplus_gcg.icre_tomato" |
+                  genotype == "nkx2.2flfl_gcg.icre_tomato",
+                fasting_length == 12) %>%
+    mutate(genotype = factor(genotype, levels = c("nkx2.2plusplus_gcg.icre_tomato", 
+                                                "nkx2.2flfl_gcg.icre_tomato"))) %>%
+  group_by(genotype) %>%
+  mutate(mean_BG = mean(blood_glucose, na.rm = TRUE),
+         BG_se = sd(blood_glucose, na.rm = TRUE)/sqrt(n())) %>%
+  ggplot(aes(x = genotype, y = mean_BG, fill = genotype)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_jitter(aes( y = blood_glucose), size = 1, width = .2, color = "#525252") +
+  geom_signif(comparisons = list(c(1, 2)), 
+              annotations = fasting_12_t.test_pvalue,
+              y_position = 115) +
+  geom_errorbar(aes(ymin = mean_BG - BG_se, ymax = mean_BG + BG_se), width=.2,
+                position=position_dodge(.9)) +
+  theme_cowplot() +
+  labs(y = "Blood Glucose (mg/dL)",
+       x = "Genotype",
+       title = "22wk Fasting (12hr) Blood Glucose",
+       fill = "Genotype") +
+  theme(axis.title.y = element_text(face = "bold"),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(face = "bold"),
+        legend.position = "none",
+        aspect.ratio = 1,
+        plot.title = element_text(face = "bold")) +
+  guides(fill = guide_legend(override.aes = list(size = .5))) +
+  scale_y_continuous(limits = c(0,120), 
+                     n.breaks = 6) +
+  scale_fill_manual(values = c("#969696", "#238b45"))
+
+
+tiff(filename ="/Volumes/Brooks_02/Analysis/nkx2.2_alpha_KO_fasting/results/plots/nkx2.2_alpha_KO_22wk_fasting_12hr_plot.tiff", 
+     units = "in", width = 4, height = 5, 
+     res = 300, compression = "lzw")
+fasting_12_plot
+dev.off()
+
+pdf(file = "/Volumes/Brooks_02/Analysis/nkx2.2_alpha_KO_fasting/results/plots/nkx2.2_alpha_KO_22wk_fasting_12hr_plot.pdf", 
+     width = 4, height = 5)
+fasting_12_plot
+dev.off()
+
+```
