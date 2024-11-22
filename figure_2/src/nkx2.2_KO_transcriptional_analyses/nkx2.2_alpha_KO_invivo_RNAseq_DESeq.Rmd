@@ -1,0 +1,240 @@
+---
+title: "in vivo Nkx2.2 alpha KO RNAseq"
+author: "Elliott Brooks"
+date: "2/23/24"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+#BiocManager::install("DESeq2")
+
+library(DESeq2)
+library(ggplot2)
+library(ggrepel)
+#library(EnhancedVolcano)
+library(readxl)
+library(dplyr)
+library(readr)
+library(tidyverse)
+library(edgeR)
+
+```
+
+
+
+# Data Import
+
+- Data collected by bulk RNA-seq of FACS purified alpha cells collected from either the Nkx2.2 alpha KO mouse islets (Mut_ samples) or the control Gcg-iCre mouse islets (Con_ samples). RNA was isolated and libraries were prepared using a small input library prep kit.
+
+- Data from run 1 can be found in "raw_counts" but due to contamination of mutant replicate #3 we had to discard one sample and do another run of 1 control and 1 mutant, which can be found in "raw_counts2"
+```{r}
+raw_counts <- read_delim("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/raw_data/rna_seq_countTable_cutadapt_trim.txt", 
+    "\t", escape_double = FALSE,  trim_ws = TRUE)
+
+raw_counts2 <- read_delim("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/raw_data/Nkx2.2_alpha_KO_2_countTable_cutadapt_trim.txt", 
+    "\t", escape_double = FALSE,  trim_ws = TRUE)
+
+```
+
+# DESeq Analysis
+
+## Combine Runs
+```{r}
+colnames(raw_counts)[2:7] <- c("Con_1", "Con_2", "Con_3",
+                               "Mut_1", "Mut_2", "Mut_3")
+
+colnames(raw_counts2)[2:3] <- c("Con_4", "Mut_4")
+
+
+raw_counts <- raw_counts %>%
+  full_join(., raw_counts2) %>%
+    dplyr::select(gene, Con_1, Con_2, Con_3, Con_4, Mut_1, Mut_2, Mut_4) # Mut_3 omitted due to RNA from heterogeneous flox mouse.
+
+write_delim(raw_counts, "/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/raw_data/Nkx2.2_alpha_KO_countTable_cutadapt_trim_all.txt", "\t")
+
+```
+
+
+## Convert reads table into matrix and tidy matrix
+```{r}
+counts.matrix <- raw_counts %>%
+  column_to_rownames(var = "gene") %>% 
+  as.matrix()
+  
+
+counts.matrix[,2] <- as.integer(counts.matrix[,2])
+
+
+colnames(counts.matrix) <-NULL
+
+```
+
+
+## Set experiment metadata for comparisons and batch
+```{r}
+condition = c("Control", "Control", "Control", "Control", "Knockout", "Knockout", "Knockout")
+samples <- c("Control_1", "Control_2", "Control_3", "Control_4", "Mutant_1", "Mutant_2", "Mutant_4")
+
+
+# set column data
+colData <- data.frame(row.names = samples, condition = condition)
+
+colData$condition <- factor(colData$condition)
+colData$batch <- factor(colData$batch)
+```
+
+## Generate DESeq Dataset from counts matrix and metadata
+```{r}
+
+ddsHTSeq <- DESeqDataSetFromMatrix(countData = counts.matrix,
+             colData = colData,
+             design = ~condition) # comparisons by phenotype
+
+
+
+```
+
+## Run differenital Analysis
+```{r}
+#Run DESeq2 on ddsHTSeq
+dds = DESeq(ddsHTSeq)
+
+```
+
+## Generate PCA plot
+```{r}
+#Normalize samples
+rld = rlogTransformation(dds)
+
+#make a new PCA plot, note that now the colors identify samples from day 1 vs day 2
+
+tiff(filename = paste0("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/Nkx2.2_alpha_KO_no.mut3_PCA.tiff"), 
+     units = "in", width = 5, height = 5, 
+     res = 300, compression = "lzw")
+plotPCA(rld, intgroup = c("condition"),returnData = FALSE) +
+  geom_text_repel(aes_string( x = "PC1", y = "PC2", label = "name"), size=2, color = "black") + theme_classic()+ labs(title = "PCA")
+dev.off()
+
+
+
+```
+
+## Get differential expression results
+For this section I'll be moving forward with the model that accounts for both condition and day of the experiment (*dds_batch*). 
+```{r}
+#Get results from the dds_batch with adjusted p-value < 0.05
+res <- results(dds)
+table(res$padj!=0)
+table(res$padj<0.05)
+
+#Order the samples by the adjusted p-value
+res = res[order(res$padj),]
+
+#merge res with the normalized count data which allows you to view basemean normalized values for each sample
+resdata = merge(as.data.frame(res), as.data.frame(counts(dds, normalized =TRUE)), by="row.names", sort = FALSE)
+
+
+names(resdata)[1]="gene_id"
+
+resdata <- resdata %>%
+  separate(gene_id, into = c("symbol", "ens_id"),
+           sep = "_",
+           remove = F)
+
+# filter out genes that are not significantly differentially expressed
+resdata_filt <- resdata %>% dplyr::filter(padj <= 0.05)
+
+
+#write the results to a csv file 
+
+## Fltered dataset
+write.csv(resdata_filt, file="/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Nkx2.2_invivo.alpha_KO_DESeq2_output_padj.filt.csv")
+
+## full output
+write.csv(resdata, file="/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Nkx2.2_invivo.alpha_KO_DESeq2_output.csv")
+
+#
+```
+
+
+# Normalized counts dataframe
+
+1. convert to dataframe
+2. make the gene symbols into the row names then delete the now extraneous symbols column
+```{r, prepare data}
+# 1. covert to dataframe
+raw_counts_df <- data.frame(raw_counts) #%>% 
+  #dplyr::select(-KD_3, -Scramble_4)
+
+# 2. make genes symbols into rownames
+row.names(raw_counts_df) <- raw_counts_df$gene
+
+# delete sym bols column and save as "x"
+x = raw_counts_df[,-1]
+
+
+
+```
+
+
+## 2. Define sample grouping
+1.Create a factor vector of the cell types of the data: beta x3, alpha x3.
+```{r}
+# 1. create factor vector of cell types
+time <- factor(c("control", "control", "control", "control",
+                 "mutant", "mutant", "mutant"), 
+               levels = c("control", "mutant"))
+
+
+
+```
+
+## 3. Create DGE list
+1. Using `DGEList` from the `edgeR` package create a DGE list with husing data as 'counts=' and 'time' as group. Save as 'd'.
+```{r}
+d <- DGEList(counts=x, group = time)
+```
+
+## 4. Filter out the low counts and normalize
+1. Find the rows that have a Counts per Million (cpm) of > 1
+2. subset the DGE list so that only the rows with a cpm above 1 are kept.
+```{r}
+# identify the rows to keep that have cpm() > 1
+keep <- rowSums(cpm(d)>1) >= 1 
+# remove the rows that don't have sufficient cpm
+d <- d[keep, , keep.lib.sizes=FALSE] 
+
+
+
+cc <- rowSums(cpm(d)>1) %>% as.data.frame() %>% rownames_to_column(var = "col")
+```
+
+## 5. Normalize each replicate using the raw library size.
+1. Use the `calcNormFactors` function with method "TMM" to filter out highly expressed genes, lowly expressed genez and genes with highly variable expression accros replicates. This function will also calculate the scaling factor that will be used to normalize the rpelicates. 
+2. Check to see if the normalization worked by comparing the boxplot of the unnormalized psuedocounts to te boxplot of the normalized psuedocounts. The means of the normalized data should all be the same.
+```{r}
+d <- calcNormFactors(d, method = "TMM")
+
+counts <- d$counts
+pseudoCounts <- log2(counts + .001)
+boxplot(pseudoCounts, col="gray", las=3)
+
+normCounts <- cpm(d)
+pseudoNormCounts <- log2(normCounts + 1)
+boxplot(pseudoNormCounts, col="gray", las=3)
+
+
+ pseudoNormCounts %>%
+  data.frame() %>%
+   rownames_to_column(var = "gene") %>%
+  write_csv(., "/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Nkx2.2_invivo_alpha_KO_PseudoNromCounts.csv")
+
+
+
+```
