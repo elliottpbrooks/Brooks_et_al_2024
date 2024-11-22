@@ -35,35 +35,39 @@ source("/Volumes/Brooks_02/Analysis/Brooks_etal_2024/Functions_2024/functionfile
 ```
 
 # data import
+## Nkx2.2 KO RNAseq data sets
 ```{r}
+# alpha cell KO of NKX2.2 RNAseq DGE outputs
+
+## full DGE output no filtering
 Nkx2.2_invivo.alpha_KO_DESeq2_output <-
   read.csv("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Nkx2.2_invivo.alpha_KO_DESeq2_output.csv")
 
-
+## filtered DGE output by padj
 Nkx2.2_invivo.alpha_KO_DESeq2_padj.filt <-
   read.csv("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Nkx2.2_invivo.alpha_KO_DESeq2_output_padj.filt.csv")
 
 
-#read in beta NKX2.2 DEGs data set published in gutierreze 2017
+##read in beta NKX2.2 DEGs data set published in gutierez, 2017
 nkx2.2_beta_KO_RNAseq_DGE <- read_csv("/Volumes/Elliott_Brooks/backup/nkx2.2_KD_RNAseq/GD01_RipCre_Nkx2.2_4wks.csv")
 
 nkx2.2_beta_KO_RNAseq_DGE <- nkx2.2_beta_KO_RNAseq_DGE %>% 
   dplyr::select(gene, log2FoldChange, pval, padj) %>% 
   dplyr::filter(pval <= 0.05)
+```
 
+## Huising cell specific gene expression DGE analyses
+- These datasets were generated from from the edgeR DGE done in "huising_islet_RNAseq_DGE" located in this subdirectory and R project
+```{r}
 
+Huising_alphaBeta <- 
+  read_csv("/Volumes/Elliott_Brooks/backup/huising/foldchange_huising_alphaVbeta.csv")
 
+Huising_alphaDelta <- 
+  read_csv("/Volumes/Elliott_Brooks/backup/huising/foldchange_huising_alphaVdelta.csv")
 
-###
-
-
-Huising_alphaBeta <- read_csv("/Volumes/Elliott_Brooks/backup/huising/foldchange_huising_alphaVbeta.csv")
-
-Huising_alphaDelta <- read_csv("/Volumes/Elliott_Brooks/backup/huising/foldchange_huising_alphaVdelta.csv")
-
-Huising_deltaBeta <- read_csv("/Volumes/Elliott_Brooks/backup/huising/foldchange_huising_deltaVbeta.csv")
-
-
+Huising_deltaBeta <- 
+  read_csv("/Volumes/Elliott_Brooks/backup/huising/foldchange_huising_deltaVbeta.csv")
 
 ```
 
@@ -127,7 +131,7 @@ colnames(Huising_deltaBeta_filt2) <- c("gene_id", "logFC_huising.DvB", "logCPM_h
 
 ## Integrate via join verbs
 ```{r}
-#combine special huising dataset with alpha cell RNA-seq
+#combine huising datasets with alpha cell RNA-seq
  alpha_nkx2.2_KO_huising <- Nkx2.2_invivo.alpha_KO_DESeq2_padj.filt %>%
   dplyr::filter(!is.na(baseMean)) %>% 
   left_join(.,Huising_alphaBeta_filt2, 
@@ -139,16 +143,19 @@ colnames(Huising_deltaBeta_filt2) <- c("gene_id", "logFC_huising.DvB", "logCPM_h
 
 
 
-
+# make initial pair-wise cell specific expression determinations based on single DGEs
 alpha_nkx2.2_KO_huising <- alpha_nkx2.2_KO_huising %>%
   mutate(cell_expression_AvBvD = ifelse(cell_expression.AvB == "alpha cell genes" & 
-                                           (cell_expression.AvD == "alpha cell genes" | is.na(cell_expression.AvD)),
+                                           (cell_expression.AvD == "alpha cell genes" |
+                                              is.na(cell_expression.AvD)),
                                          "alpha cell genes",
                                          if_else(cell_expression.AvB == "beta cell genes" & 
-                                                   (cell_expression.DvB == "beta cell genes" | is.na(cell_expression.DvB)),
+                                                   (cell_expression.DvB == "beta cell genes" |
+                                                      is.na(cell_expression.DvB)),
                                                  "beta cell genes",
                                                  if_else(cell_expression.AvD == "delta cell genes" & 
-                                                           (cell_expression.DvB == "delta cell genes" | is.na(cell_expression.DvB)),
+                                                           (cell_expression.DvB == "delta cell genes" |
+                                                              is.na(cell_expression.DvB)),
                                                          "delta cell genes",
                                                          "other"))),
          cell_expression_AvBvD = if_else(is.na(cell_expression_AvBvD),
@@ -165,13 +172,13 @@ alpha_nkx2.2_KO_huising <- alpha_nkx2.2_KO_huising %>%
 ##Combine alpha and beta RNA-seq and ChIP-seq datasets
 ```{r}
 
-
+# tidy up alpha cell data
 alpha_KO_RNAseq <- Nkx2.2_invivo.alpha_KO_DESeq2_padj.filt %>%
   dplyr::select(symbol, log2FoldChange, pvalue, padj)
 
 colnames(alpha_KO_RNAseq)[1:4] <- c("symbol", "logFC.alphaKO", "p.value.alphaKO", "adjust.p.alphaKO")
 
-
+# tidy up beta cell data
 beta_KO_RNAseq <- nkx2.2_beta_KO_RNAseq_DGE %>%
   dplyr::select(gene,log2FoldChange, pval, padj)
 
@@ -191,8 +198,6 @@ alpha.beta_KO_RNAseq <- full_join(alpha_KO_RNAseq, beta_KO_RNAseq,
 ## Add husing data
 ```{r}
 
-
-
 #combine special huising dataset with alpha cell RNA-seq
  alpha.beta_KO_RNAseq_huising <- alpha.beta_KO_RNAseq %>%
   left_join(.,Huising_alphaBeta_filt2, 
@@ -204,7 +209,7 @@ alpha.beta_KO_RNAseq <- full_join(alpha_KO_RNAseq, beta_KO_RNAseq,
 
 
 
-
+# make more refined cell specific expression calls based on results from all 3 DGE pairs
 alpha.beta_KO_RNAseq_huising <- alpha.beta_KO_RNAseq_huising %>%
   mutate(cell_expression_AvBvD = ifelse(cell_expression.AvB == "alpha cell genes" & 
                                            (cell_expression.AvD == "alpha cell genes" |
@@ -277,7 +282,7 @@ alpha.beta_KO_RNAseq_huising <- alpha.beta_KO_RNAseq_huising %>%
 
 
 
-#Using direct target columns and DEg regulation columns label each matching gene as explained above
+#Using d DEg regulation columns label each matching gene as explained above
 alpha.beta_KO_RNAseq_huising <- alpha.beta_KO_RNAseq_huising %>% 
   mutate(regulation_comparison = if_else(Nkx2.2_regulation.alpha == "downregulated" & 
                                            Nkx2.2_regulation.beta == "upregulated",
@@ -309,62 +314,6 @@ write.csv(alpha.beta_KO_RNAseq_huising, "/Volumes/Brooks_02/Analysis/Brooks_etal
 ```
 
 
-## Create Husing summary stats
-```{r}
-
-huising_summ <- Huising_alphaBeta_filt2 %>%
-  left_join(.,Huising_alphaDelta_filt2, 
-            by = c("gene_id")) %>%
-  left_join(.,Huising_deltaBeta_filt2, 
-            by = c("gene_id")) %>%
-  mutate(cell_expression_AvBvD = ifelse(cell_expression.AvB == "alpha cell genes" & 
-                                          (cell_expression.AvD == "alpha cell genes" | is.na(cell_expression.AvD)),
-                                        "alpha cell genes",
-                                        if_else(cell_expression.AvB == "beta cell genes" & 
-                                                  (cell_expression.DvB == "beta cell genes" | is.na(cell_expression.DvB)),
-                                                "beta cell genes",
-                                                if_else(cell_expression.AvD == "delta cell genes" & 
-                                                          (cell_expression.DvB == "delta cell genes" | is.na(cell_expression.DvB)),
-                                                        "delta cell genes",
-                                                        "other"))),
-         cell_expression_AvBvD = if_else(is.na(cell_expression_AvBvD),
-                                         "other",
-                                         cell_expression_AvBvD)) %>%
-  mutate(cell_expression.AvB = replace_na(cell_expression.AvB, "not expressed"),
-         cell_expression.AvD = replace_na(cell_expression.AvD, "not expressed"),
-         cell_expression.DvB = replace_na(cell_expression.DvB, "not expressed")) %>%
-  mutate(cell_expression_AvBvD = if_else(cell_expression.AvB == "beta cell genes" &
-                                           cell_expression.AvD == "delta cell genes" &
-                                           cell_expression.DvB == "no_change",
-                                         "beta delta cell gene",
-                                         if_else(cell_expression.AvB == "no_change" &
-                                                   cell_expression.AvD == "alpha cell genes" &
-                                                   cell_expression.DvB == "beta cell genes"  ,
-                                                 "alpha beta cell gene",
-                                                 if_else(cell_expression.AvB == "alpha cell genes" &
-                                                           cell_expression.AvD == "no_change" &
-                                                           cell_expression.DvB == "delta cell genes",
-                                                         "alpha delta cell gene",
-                                                         if_else(cell_expression.AvB == "no_change" &
-                                                                   cell_expression.AvD == "no_change" &
-                                                                   cell_expression.DvB == "no_change",
-                                                                 "islet gene",
-                                                                 if_else(cell_expression.AvB == "not expressed" &
-                                                                           cell_expression.AvD == "not expressed" &
-                                                                           cell_expression.DvB == "not expressed",
-                                                                         "islet disallowed",
-                                                                         cell_expression_AvBvD))))))
-
-
-
-huising_summ <- alpha.beta_KO_RNAseq_huising %>%
-  group_by(cell_expression_AvBvD) %>%
-    summarize(count = n())
-
-
-
-```
-
 
 
 
@@ -394,7 +343,7 @@ alpha_nkx2.2_KO_huising_join <- alpha_nkx2.2_KO_huising %>%
 ## VOLCANO PLOT: alpha beta cell expression volcano
 ```{r}
                         
-
+# handpick some important genes to label in the volcano plot
 alpha_cell.specific_genes <- c("Slc38a5", "Gcg", "Mafb","Etv1", "Irx2", "Pou3f4", "Avpr1b", "Fev")
 
 beta_cell.specific_genes <- c("Ero1lb", "Mafa", "Ucn3", "Slc2a2",  "Pcsk1", "Ins1", "Ins2", "Iapp")
@@ -402,7 +351,7 @@ beta_cell.specific_genes <- c("Ero1lb", "Mafa", "Ucn3", "Slc2a2",  "Pcsk1", "Ins
 
 
 alpha_Nkx2.2_KO_RNAseq_cell.specific_volcano_plot <- Nkx2.2_invivo.alpha_KO_DESeq2_output %>%
-  dplyr::filter(log2FoldChange < 6 & log2FoldChange > -6) %>%
+  dplyr::filter(log2FoldChange < 6 & log2FoldChange > -6) %>% # for aesthetic reasons
   left_join(., alpha_nkx2.2_KO_huising_join, by = "symbol") %>%
   mutate(sig = if_else(padj <= 0.05 & !is.na(padj),
                                "significant",
@@ -476,9 +425,11 @@ ggplot(aes(x = log2FoldChange, y = -log10(padj),
   ylim(0,50) +
   guides(size = "none")
   
+
+# rasterize points in plot for easier use in illustrator
 alpha_Nkx2.2_KO_RNAseq_cell.specific_volcano_plot_rastr <- rasterize(alpha_Nkx2.2_KO_RNAseq_cell.specific_volcano_plot,
                                                                      layers = "Point", dpi = 300)
-
+#export plots
 
 tiff("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/alpha_Nkx2.2_KO_RNAseq_cell.specific_volcano_plot.tiff", 
      units = "in", width = 8, height = 8, 
@@ -495,6 +446,257 @@ dev.off()
 
 
 
+```
+
+
+# Cell specific gene expression enrichment
+
+## STATISTICS alpha cells
+
+### tidy and integrate Huising islet data
+```{r}
+
+
+
+#integrate Huising islet  gene expression data
+
+Nkx2.2_invivo.alpha_KO_DESeq2_output_huising <- Nkx2.2_invivo.alpha_KO_DESeq2_output %>%
+  left_join(.,Huising_alphaBeta_filt2, 
+            by = c("symbol" = "gene_id")) %>%
+  left_join(.,Huising_alphaDelta_filt2, 
+            by = c("symbol" = "gene_id")) %>%
+  left_join(.,Huising_deltaBeta_filt2, 
+            by = c("symbol" = "gene_id"))  %>%
+  mutate(cell_expression_AvBvD = ifelse(cell_expression.AvB == "alpha cell genes" & 
+                                          (cell_expression.AvD == "alpha cell genes" | is.na(cell_expression.AvD)),
+                                        "alpha cell genes",
+                                        if_else(cell_expression.AvB == "beta cell genes" & 
+                                                  (cell_expression.DvB == "beta cell genes" | is.na(cell_expression.DvB)),
+                                                "beta cell genes",
+                                                if_else(cell_expression.AvD == "delta cell genes" & 
+                                                          (cell_expression.DvB == "delta cell genes" | is.na(cell_expression.DvB)),
+                                                        "delta cell genes",
+                                                        "other"))),
+         cell_expression_AvBvD = if_else(is.na(cell_expression_AvBvD),
+                                         "other",
+                                         cell_expression_AvBvD))
+
+
+# label genes for their regulation direction in alpha and beta datasets.
+Nkx2.2_invivo.alpha_KO_DESeq2_output_cell.specific <- Nkx2.2_invivo.alpha_KO_DESeq2_output_huising %>%
+    mutate(cell.specific.reg_alpha.beta = if_else(log2FoldChange < 0 & cell_expression_AvBvD == "alpha cell genes",
+                                                "alpha cell genes",
+                                                if_else(log2FoldChange > 0 & cell_expression_AvBvD == "beta cell genes",
+                                                        "beta cell genes",
+                                                        "other")),
+         cell.specific.reg_alpha.delta = if_else(log2FoldChange > 0 & cell_expression_AvBvD == "delta cell genes",
+                                                 "delta cell genes",
+                                                 "other"),
+         Nkx2.2_regulation = if_else(log2FoldChange > 0 &  padj <= 0.05 & !is.na(log2FoldChange),
+                                           "upregulated",
+                                           if_else(log2FoldChange < 0 & padj <= 0.05 & !is.na(log2FoldChange),
+                                           "downregulated",
+                                           "not_regulated")),
+         Nkx2.2_regulation = if_else(is.na(Nkx2.2_regulation),
+                                     "not_regulated",
+                                     Nkx2.2_regulation))
+```
+
+### create contigency table
+```{r}
+Nkx2.2_invivo.alpha_KO_DESeq2_output_cell.specific_STAT <- Nkx2.2_invivo.alpha_KO_DESeq2_output_cell.specific %>%
+  group_by(cell_expression_AvBvD, Nkx2.2_regulation) %>%
+  summarize(count = n()) %>%
+  group_by(Nkx2.2_regulation) %>%
+  mutate(total_count = sum(count) - count) %>%
+  group_by(cell_expression_AvBvD) %>%
+  mutate(background_count = sum(count)) %>%
+  group_by(Nkx2.2_regulation) %>%
+  mutate(background_total_count = sum(background_count) - background_count) %>%
+  unite(c(cell_expression_AvBvD, Nkx2.2_regulation), col = "names", sep = "|")
+```
+
+### Run stats calculate foldchange and calculate foldchanges
+```{r}
+
+Nkx2.2_invivo.alpha_KO_DESeq2_output_cell.specific_STAT_output <-
+  fishR_enrichR(Nkx2.2_invivo.alpha_KO_DESeq2_output_cell.specific_STAT) %>% #statistics function here. Runs iterative hypergeometric tests
+  left_join(., Nkx2.2_invivo.alpha_KO_DESeq2_output_cell.specific_STAT) %>%
+  separate(names, into = c("cell_expression_AvBvD", "Nkx2.2_regulation"), sep = "\\|") %>%
+  mutate(proportion = count/(count+total_count),
+         background_proportion = total_count/(background_total_count+background_count),
+         foldchange = proportion/background_proportion)
+
+
+  
+```
+
+
+## Integrate husing data and tidy beta KO cell specific expression 
+
+```{r}
+beta_Nkx2.2_KO_RNAseq_cell.specific <- nkx2.2_beta_KO_RNAseq_DGE %>%
+  full_join(.,Huising_alphaBeta_filt2, 
+            by = c("gene" = "gene_id")) %>%
+  full_join(.,Huising_alphaDelta_filt2, 
+            by = c("gene" = "gene_id")) %>%
+  full_join(.,Huising_deltaBeta_filt2, 
+            by = c("gene" = "gene_id"))  %>%
+  mutate(cell_expression_AvBvD = ifelse(cell_expression.AvB == "alpha cell genes" & 
+                                          (cell_expression.AvD == "alpha cell genes" | is.na(cell_expression.AvD)),
+                                        "alpha cell genes",
+                                        if_else(cell_expression.AvB == "beta cell genes" & 
+                                                  (cell_expression.DvB == "beta cell genes" | is.na(cell_expression.DvB)),
+                                                "beta cell genes",
+                                                if_else(cell_expression.AvD == "delta cell genes" & 
+                                                          (cell_expression.DvB == "delta cell genes" | 
+                                                             is.na(cell_expression.DvB)),
+                                                        "delta cell genes",
+                                                        "other"))),
+         cell_expression_AvBvD = if_else(is.na(cell_expression_AvBvD),
+                                         "other",
+                                         cell_expression_AvBvD)) %>%
+  unique() %>%
+  mutate(cell.specific.reg_alpha.beta = if_else(log2FoldChange < 0 & cell_expression_AvBvD == "alpha cell genes",
+                                                "alpha cell genes",
+                                                if_else(log2FoldChange > 0 & cell_expression_AvBvD == "beta cell genes",
+                                                        "beta cell genes",
+                                                        "other")),
+         cell.specific.reg_alpha.delta = if_else(log2FoldChange > 0 & cell_expression_AvBvD == "delta cell genes",
+                                                 "delta cell genes",
+                                                 "other"))
+
+colnames(beta_Nkx2.2_KO_RNAseq_cell.specific)[1] <- "symbol"
+
+```
+
+
+## STATISTICS beta cells
+
+### tidy for stats
+```{r}
+# label genes for their regulation direction in alpha and beta datasets.
+beta_Nkx2.2_KO_RNAseq_cell.specific_tidy <- beta_Nkx2.2_KO_RNAseq_cell.specific %>%
+    mutate(cell.specific.reg_alpha.beta = if_else(log2FoldChange < 0 & cell_expression_AvBvD == "alpha cell genes",
+                                                "alpha cell genes",
+                                                if_else(log2FoldChange > 0 & cell_expression_AvBvD == "beta cell genes",
+                                                        "beta cell genes",
+                                                        "other")),
+         cell.specific.reg_alpha.delta = if_else(log2FoldChange > 0 & cell_expression_AvBvD == "delta cell genes",
+                                                 "delta cell genes",
+                                                 "other"),
+         Nkx2.2_regulation = if_else(log2FoldChange > 0 &  pval <= 0.05 & !is.na(log2FoldChange),
+                                           "upregulated",
+                                           if_else(log2FoldChange < 0 & pval <= 0.05 & !is.na(log2FoldChange),
+                                           "downregulated",
+                                           "not_regulated")),
+         Nkx2.2_regulation = if_else(is.na(Nkx2.2_regulation),
+                                     "not_regulated",
+                                     Nkx2.2_regulation))
+```
+
+### create contigency table
+```{r}
+beta_Nkx2.2_KO_RNAseq_cell.specific_tidy_STAT <- beta_Nkx2.2_KO_RNAseq_cell.specific_tidy %>%
+  group_by(cell_expression_AvBvD, Nkx2.2_regulation) %>%
+  summarize(count = n()) %>%
+  group_by(Nkx2.2_regulation) %>%
+  mutate(total_count = sum(count) - count) %>%
+  group_by(cell_expression_AvBvD) %>%
+  mutate(background_count = sum(count)) %>%
+  group_by(Nkx2.2_regulation) %>%
+  mutate(background_total_count = sum(background_count) - background_count) %>%
+  unite(c(cell_expression_AvBvD, Nkx2.2_regulation), col = "names", sep = "|")
+```
+
+### Run stats calculate foldchange and calculate foldchanges
+```{r}
+
+beta_Nkx2.2_KO_RNAseq_cell.specific_tidy_STAT_output <-
+  fishR_enrichR(beta_Nkx2.2_KO_RNAseq_cell.specific_tidy_STAT) %>% #statistics function here. Runs iterative hypergeometric tests
+  left_join(., beta_Nkx2.2_KO_RNAseq_cell.specific_tidy_STAT) %>%
+  separate(names, into = c("cell_expression_AvBvD", "Nkx2.2_regulation"), sep = "\\|") %>%
+  mutate(proportion = count/(count+total_count),
+         background_proportion = total_count/(background_total_count+background_count),
+         foldchange = proportion/background_proportion)
+
+```
+
+
+## PLOT: Enrichment dotplot for cell type specifci gene expression in Nkx2.2 KO DEGs
+```{r}
+alpha.beta_Nkx2.2_KO_RNAseq_cell.specific_enrichment_plot <-
+  Nkx2.2_invivo.alpha_KO_DESeq2_output_cell.specific_STAT_output %>%
+  mutate(cell = "alpha") %>%
+  rbind(., mutate(beta_Nkx2.2_KO_RNAseq_cell.specific_tidy_STAT_output,
+                  cell = "beta")) %>%
+  dplyr::filter(cell_expression_AvBvD != "other") %>%
+  unite(c(cell_expression_AvBvD, Nkx2.2_regulation), col = "names", sep = "|", remove = F) %>%
+  mutate(Nkx2.2_regulation = factor(Nkx2.2_regulation, 
+                                    levels = c("upregulated", "downregulated", "not_regulated"),
+                                    labels = c("Upregulated", "Downregulated", "Not Regulated")),
+         cell_expression_AvBvD = factor(cell_expression_AvBvD,
+                                        levels = c("alpha cell genes", "beta cell genes", "delta cell genes"),
+                                        labels = c("\u03B1 genes", "\u03B2 genes", "\u03B4 genes")),
+         cell = factor(cell,
+                       levels = c("alpha", "beta"),
+                       labels = c("Nkx2.2 \u03B1-KO", "Nkx2.2 \u03B2-KO"))) %>%
+  ggplot(aes(x = -log10(p.value), 
+             y = fct_reorder(Nkx2.2_regulation, -log10(p.value)), size = foldchange, color = cell_expression_AvBvD)) +
+    geom_bar_pattern(aes(x = -log10(p.value), 
+             y = fct_reorder(Nkx2.2_regulation, -log10(p.value)),
+             #color = cell_expression_AvBvD),
+             fill = cell_expression_AvBvD, pattern = Nkx2.2_regulation),
+           stat = "identity", 
+           pattern_fill = "black",
+           pattern_angle = 45,
+           pattern_density = 0.1,
+           pattern_spacing = 0.1,
+             #fill = "#ffffff",
+           position = position_dodge(), 
+           inherit.aes = F) +
+  geom_point() +
+  geom_text(aes(label = paste(signif(foldchange, digits = 3), " fold"),
+                x = -log10(p.value), 
+             y = fct_reorder(Nkx2.2_regulation, -log10(p.value))), 
+            inherit.aes = F,
+            nudge_x = 40) +
+  cowplot::theme_cowplot() +
+  scale_size_continuous(range = c(1,20)) +
+  #guides(size = "none") +
+  facet_grid(rows = vars(cell_expression_AvBvD), cols = vars(cell)) + #,
+             #switch = "y") +
+  scale_color_manual(values = c("\u03B1 genes" = "#74c476", 
+                                "\u03B2 genes" = "#8c96c6", 
+                                "\u03B4 genes" = "#fe9929")) +
+    scale_fill_manual(values = c("\u03B1 genes" = "#a1d99b", 
+                                "\u03B2 genes" = "#bfd3e6", 
+                                "\u03B4 genes" = "#fed976")) +
+  scale_pattern_manual(values = c("Upregulated" = "stripe", "Downregulated" = "circle", "Not Regulated" = "none")) +
+  labs(x = "Cell Specific Gene Enrichment Significance (-log10(p-value))",
+       y = "Gene Expression Regulation by NKX2.2") +
+  theme(axis.title = element_text(face = "bold"),
+        legend.position = "none",
+        strip.text = element_text(face = "bold", size = 20),
+        #strip.text.y = element_text(face = "bold"),
+        strip.placement = "outside",
+        strip.background = element_rect(color = "black", fill = "white"),
+        panel.border = element_rect(color = "black")) +
+  xlim(0,200)
+
+  
+
+tiff("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/alpha.beta_Nkx2.2_KO_RNAseq_cell.specific_enrichment_plot.tiff", 
+     units = "in", width = 10, height = 8, 
+     res = 300, compression = "lzw")
+alpha.beta_Nkx2.2_KO_RNAseq_cell.specific_enrichment_plot
+dev.off()
+
+
+pdf("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/alpha.beta_Nkx2.2_KO_RNAseq_cell.specific_enrichment_plot.pdf", 
+     width = 10, height = 8)
+alpha.beta_Nkx2.2_KO_RNAseq_cell.specific_enrichment_plot
+dev.off()
 ```
 
 
@@ -613,9 +815,9 @@ dev.off()
 
 
 
-# heatmaps: overlap and unique targets 
+# Heatmaps: overlap and unique targets 
 
-
+## create a dataframe for arranging the heatmap rows.
 ```{r}
 Nkx2.2_alpha.beta_overlap_plotting <- alpha.beta_KO_RNAseq_huising %>%
   dplyr::select(symbol, logFC.alphaKO, logFC.betaKO, 
@@ -633,56 +835,44 @@ Nkx2.2_alpha.beta_overlap_plotting <- alpha.beta_KO_RNAseq_huising %>%
   dplyr::select(-Nkx2.2_regulation.alpha,
                 -Nkx2.2_regulation.beta)
 
-
-genes_overlap <- bitr(Nkx2.2_alpha.beta_overlap_plotting$symbol, 
-                  fromType = "SYMBOL", 
-                  toType = "ENTREZID", 
-                  OrgDb = "org.Mm.eg.db")
-
-
-
-Nkx2.2_alpha.beta_overlap_plotting %>%
-  group_by(regulation_comparison) %>%
-  summarize(n())
-
 ```
 
 
-
-## tidy pseudocount data
+## prepare alpha cell pseudocount data
+### tidy pseudocount data
 ```{r}
 
-
-
-
+#import alpha cell RNAseq pseuodcounts counts generated in "nkx2.2_alpha_KO_invivo_RNAseq_DESeq"
 Nkx2.2_invivo_alpha_KO_PseudoNromCounts <-
   read_csv("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Nkx2.2_invivo_alpha_KO_PseudoNromCounts.csv")
 
 colnames(Nkx2.2_invivo_alpha_KO_PseudoNromCounts)[2:8] <- c("Gcg-iCre Control 1", "Gcg-iCre Control 2", 
                                                          "Gcg-iCre Control 3", "Gcg-iCre Control 4",
                                                     "Nkx2.2 alpha-KO 1", "Nkx2.2 alpha-KO 2", "Nkx2.2 alpha-KO 3") 
+```
 
+### perform batch correction on pseudocounts
+```{r}
 
-
+#convert to matrix
 Nkx2.2_invivo_alpha_KO_PseudoNromCounts_mat <- Nkx2.2_invivo_alpha_KO_PseudoNromCounts %>%
   column_to_rownames(var = "gene") %>%
   as.matrix()
 
-
+# Set comparisons and batch metadata
 group <- factor(c("Control", "Control", "Control", "Control",
                  "Knockout", "Knockout", "Knockout"), 
                levels = c("Control", "Knockout"))
 
 batch <- factor(c("1", "1", "1", "2", "1", "1", "2"))
 
+# run batch correction
 pseudoNormCounts_nkx2.2KO_batch <- limma::removeBatchEffect(Nkx2.2_invivo_alpha_KO_PseudoNromCounts_mat, 
                                                             batch = batch, 
                                                             group = group)
 
 
-
-
-
+# tidy batch corrected data
 pseudoNormCounts_nkx2.2KO_batch_tidy <- pseudoNormCounts_nkx2.2KO_batch %>%
   data.frame() %>%
   rownames_to_column(var = "gene_id") %>%
@@ -693,7 +883,10 @@ colnames(pseudoNormCounts_nkx2.2KO_batch_tidy)[2:8] <- c("Gcg-iCre Control 1", "
                                                          "Gcg-iCre Control 3", "Gcg-iCre Control 4",
                                                     "Nkx2.2 alpha-KO 1", "Nkx2.2 alpha-KO 2", "Nkx2.2 alpha-KO 3")
 
+```
 
+### arrange data columns
+```{r}
 pseudoNormCounts_nkx2.2KO_batch_overlap <- pseudoNormCounts_nkx2.2KO_batch_tidy %>%
   dplyr::filter(symbol %in% Nkx2.2_alpha.beta_overlap_plotting$symbol) %>%
   left_join(., Nkx2.2_alpha.beta_overlap_plotting,
@@ -709,16 +902,12 @@ pseudoNormCounts_nkx2.2KO_batch_overlap <- pseudoNormCounts_nkx2.2KO_batch_tidy 
                                                "beta_upregulated_only"))) %>%
   arrange(regulation_comparison)
 
-Nkx2.2_alpha.beta_overlap_plotting %>%
-  group_by(regulation_comparison) %>%
-  summarize(n())
-
-
 
  
 ```
 
-# tidy beta KO pseudocount data
+## prepare beta cell pseudocount data
+### tidy pseudocount data
 ```{r}
 Nkx2.2_invivo_beta_KO_PseudoNromCounts <- read_csv("/Volumes/Brooks_02/Analysis/beta_nkx2.2_KO_RNAseq/results/output_data/beta_nkx2.2_KO_fpkm.csv") %>%
   dplyr::select(-tss_id)
@@ -729,47 +918,32 @@ colnames(Nkx2.2_invivo_beta_KO_PseudoNromCounts) <- c("symbol", "MIP-Cre Control
                                                       "MIP-Cre Control 3",
                                                     "Nkx2.2 beta-KO 1", "Nkx2.2 beta-KO 2", "Nkx2.2 beta-KO 3") 
 
+```
 
-Nkx2.2_invivo_beta_KO_PseudoNromCounts_overlap <- Nkx2.2_invivo_beta_KO_PseudoNromCounts %>%
-  dplyr::filter(symbol %in% Nkx2.2_alpha.beta_overlap_plotting$symbol) %>%
-  left_join(., Nkx2.2_alpha.beta_overlap_plotting,
-            by = c("symbol")) %>%
-    mutate(regulation_comparison = factor(regulation_comparison, 
-                                    levels = c("alpha_downregulated_only", 
-                                               "alpha_upregulated_only",
-                                               "alpha_downregulated_beta_downregulated",
-                                               "alpha_downregulated_beta_upregulated",
-                                               "alpha_upregulated_beta_downregulated", 
-                                               "alpha_upregulated_beta_upregulated",
-                                               "beta_downregulated_only",
-                                               "beta_upregulated_only"))) %>%
-  arrange(regulation_comparison)
+### perform batch correction on pseudocounts
+```{r}
 
-
-
-
-
-
-
+# convert data into matrix
 Nkx2.2_invivo_beta_KO_PseudoNromCounts_mat <- Nkx2.2_invivo_beta_KO_PseudoNromCounts %>%
   rownames_to_column(var = "rownames") %>%
   unite(col = "symbol", c("symbol", "rownames"), sep = "_") %>%
   column_to_rownames(var = "symbol") %>%
   as.matrix()
 
-
+#set comparison and batch metadata
 groupb <- factor(c("Control", "Control", "Control",
                  "Knockout", "Knockout", "Knockout"), 
                levels = c("Control", "Knockout"))
 
 batchb <- factor(c("1", "2", "1", "1", "2", "1"))
 
+# run batch correction
 Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch <- limma::removeBatchEffect(Nkx2.2_invivo_beta_KO_PseudoNromCounts_mat, 
                                                             batch = batchb, 
                                                             group = groupb)
 
 
-
+# tidy batch correction data
 Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy <- Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch %>%
   data.frame() %>%
   rownames_to_column(var = "gene_id") %>%
@@ -781,7 +955,10 @@ colnames(Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy)[2:7] <- c("MIP-Cre C
                                                     "Nkx2.2 beta-KO 1", "Nkx2.2 beta-KO 2", "Nkx2.2 beta-KO 3") 
 
 
+```
 
+### arrange data columns
+```{r}
 Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap <- Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy %>%
   dplyr::filter(symbol %in% Nkx2.2_alpha.beta_overlap_plotting$symbol) %>%
   left_join(., Nkx2.2_alpha.beta_overlap_plotting,
@@ -809,14 +986,12 @@ Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap <- Nkx2.2_invivo_beta_
 nkxalpha.beta_setdiff <- c(setdiff(pseudoNormCounts_nkx2.2KO_batch_overlap$symbol,
                              Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap$symbol),
                  setdiff(Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap$symbol, pseudoNormCounts_nkx2.2KO_batch_overlap$symbol))
-
-
 ```
 
 ### Alpha KO
 ```{r}
 
-
+# cconvert data into matrix and tidy
 pseudoNormCounts_nkx2.2KO_overlap_mat <- pseudoNormCounts_nkx2.2KO_batch_overlap %>%
   dplyr::filter(!(symbol %in% nkxalpha.beta_setdiff)) %>%
   dplyr::select(-regulation_comparison, -logFC.alphaKO, -logFC.betaKO) %>%
@@ -828,27 +1003,23 @@ pseudoNormCounts_nkx2.2KO_overlap_mat <- pseudoNormCounts_nkx2.2KO_batch_overlap
   as.matrix()
 
 
-
+# Calculate z-scores accross rows
 pseudoNormCounts_nkx2.2KO_overlap_mat_scaled <- t(scale(t(pseudoNormCounts_nkx2.2KO_overlap_mat)))
 
-
+#set randomness seed
 set.seed(42)
 
+# generate Heatmap
 pseudoNormCounts_nkx2.2_alpha_KO_overlap_mat_scaled_heatmap <- pheatmap(pseudoNormCounts_nkx2.2KO_overlap_mat_scaled,
                                             cluster_rows = F,
                                             border_color = NA,
-                                            #color = mako(51),
                                             color = colorRampPalette(c("#74c476", "#bdbdbd",  "#000000"))(51),
-                                            #breaks = seq(-breaks_atac, breaks_atac, length.out = 51),
                                             main = "Nkx2.2 alpha-KO: RNA-seq",
                                            cellwidth = 30,
                                           cellheight = .25,
-                                           #cluster_cols = as.hclust(col_dendATAC),
                                            treeheight_row = 30,
                                            treeheight_col = 30,
-                                           #cluster_cols = as.hclust(col_dendATAC),
                                            fontsize_row = 1)
-        #color = colorRampPalette(c("blue", "white", "red"))(11))
 
 
 tiff("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/Nkx2.2_alpha_KO_RPKM_betaKO_overlaps_heatmap.tiff", 
@@ -867,8 +1038,7 @@ dev.off()
 
 ### Beta KO
 ```{r}
-
-
+# cconvert data into matrix and tidy
 Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_mat <- 
   Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap %>%
   dplyr::filter(!(symbol %in% nkxalpha.beta_setdiff)) %>%
@@ -883,16 +1053,14 @@ Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_mat <-
   as.matrix()
 
 
-
-
-
-
+# Calculate z-scores across rows
 Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_mat_scaled <-
   t(scale(t(Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_mat)))
 
-
+#set randomness seed
 set.seed(42)
 
+# generate Heatmap
 Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_mat_scaled_heatmap <-
   pheatmap(Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_mat_scaled,
                                             cluster_rows = F,
@@ -930,6 +1098,8 @@ dev.off()
 
 
 ## heatmap insets - specific genes
+
+### create datafeames for important genes that will be in inset heatmap
 ```{r}
 alpha_KO_only_alpha_genes2 <- data.frame(symbol = c("Slc38a5", "Gpr119", "Kcnk3", 
                                                    "Mafb", "Slc38a4", "Avpr1b", 
@@ -1012,8 +1182,8 @@ alpha.beta_KO_delta.alt.cell_genes2 <- data.frame(symbol = c("Rbp4",
          category = "alpha_down_beta_up")
  
  
- 
- specific_genes_df2 <- rbind(alpha_KO_only_alpha_genes2, alpha_KO_only_beta_genes2, 
+# combines all dfs
+specific_genes_df2 <- rbind(alpha_KO_only_alpha_genes2, alpha_KO_only_beta_genes2, 
        beta_KO_only_beta_genes2, beta_KO_only_alpha_genes2, beta_KO_only_delta_genes2, 
        alpha.beta_KO_disallowed2, alpha.beta_KO_delta.alt.cell_genes2, 
        alpha.beta_KO_islet_genes2, alpha.up_beta.down_genes2, alpha.down_beta.up_genes2) %>%
@@ -1024,7 +1194,7 @@ alpha.beta_KO_delta.alt.cell_genes2 <- data.frame(symbol = c("Rbp4",
 ```
 
 
-### Alpha KO - choice
+### Alpha KO - Inset
 ```{r}
 
 
@@ -1049,18 +1219,13 @@ set.seed(42)
 pseudoNormCounts_nkx2.2KO_overlap_choice_mat_scaled_heatmap <- pheatmap(pseudoNormCounts_nkx2.2KO_overlap_choice_mat_scaled,
                                             cluster_rows = F,
                                             border_color = NA,
-                                            #color = mako(51),
                                             color = colorRampPalette(c("#74c476", "#bdbdbd",  "#000000"))(51),
-                                            #breaks = seq(-breaks_atac, breaks_atac, length.out = 51),
                                             main = "Nkx2.2 alpha-KO: RNA-seq",
                                            cellwidth = 30,
                                           cellheight = 4,
-                                           #cluster_cols = as.hclust(col_dendATAC),
                                            treeheight_row = 30,
                                            treeheight_col = 30,
-                                           #cluster_cols = as.hclust(col_dendATAC),
                                            fontsize_row = 4)
-        #color = colorRampPalette(c("blue", "white", "red"))(11))
 
 
 tiff("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/Nkx2.2_alpha_KO_RPKM_betaKO_overlaps_heatma_choicep.tiff", 
@@ -1077,7 +1242,7 @@ dev.off()
 
 ```
 
-### Beta KO
+### Beta KO - Inset
 ```{r}
 
 
@@ -1089,17 +1254,8 @@ Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_choice_mat <-
                 symbol %in% specific_genes_df2$symbol) %>%
   dplyr::select(-regulation_comparison, -logFC.alphaKO, -logFC.betaKO) %>%
   unique() %>%
-  #rownames_to_column(var = "rownumber") %>%
-  #dplyr::filter(rownumber != "690",
-   #             rownumber != "532",
-    #            rownumber != "1059") %>%
-  #dplyr::select(-rownumber) %>%
   column_to_rownames(var = "symbol") %>%
   as.matrix()
-
-
-
-
 
 
 Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_choice_mat_scaled <-
@@ -1112,18 +1268,13 @@ Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_choice_mat_scaled_heat
   pheatmap(Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_choice_mat_scaled,
                                             cluster_rows = F,
                                             border_color = NA,
-                                            #color = viridis(51),
                                             color = colorRampPalette(c("#8c96c6", "#bdbdbd",  "#000000"))(51),
-                                            #breaks = seq(-breaks_atac, breaks_atac, length.out = 51),
                                             main = "Nkx2.2 beta-KO: RNA-seq",
                                            cellwidth = 30,
                                            cellheight = 4,
-                                           #cluster_cols = as.hclust(col_dendATAC),
                                            treeheight_row = 30,
                                            treeheight_col = 30,
-                                           #cluster_cols = as.hclust(col_dendATAC),
                                            fontsize_row = 4)
-        #color = colorRampPalette(c("blue", "white", "red"))(11))
 
 
 tiff("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/Nkx2.2_beta_KO_RPKM_alphaKO_overlaps_heatmap_choice.tiff", 
@@ -1137,7 +1288,6 @@ pdf("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/Nkx
       width = 6, height = 9)
 Nkx2.2_invivo_beta_KO_PseudoNromCounts_batch_tidy_overlap_choice_mat_scaled_heatmap
 dev.off()
-
 
 
 ```
