@@ -82,11 +82,15 @@ condition = c("Control", "Control", "Control", "Control", "Knockout", "Knockout"
 samples <- c("Control_1", "Control_2", "Control_3", "Control_4", "Mutant_1", "Mutant_2", "Mutant_4")
 
 
-# set column data
-colData <- data.frame(row.names = samples, condition = condition)
+
+batch <- c("1", "1", "1", "2", "1", "1", "2")
+
+colData <- data.frame(row.names = samples, condition = condition, 
+                      batch = batch)
 
 colData$condition <- factor(colData$condition)
 colData$batch <- factor(colData$batch)
+
 ```
 
 ## Generate DESeq Dataset from counts matrix and metadata
@@ -94,9 +98,7 @@ colData$batch <- factor(colData$batch)
 
 ddsHTSeq <- DESeqDataSetFromMatrix(countData = counts.matrix,
              colData = colData,
-             design = ~condition) # comparisons by phenotype
-
-
+             design = ~batch + condition) # correct for batch
 
 ```
 
