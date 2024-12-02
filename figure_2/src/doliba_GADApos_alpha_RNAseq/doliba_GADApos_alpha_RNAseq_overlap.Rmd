@@ -1,0 +1,303 @@
+---
+title: "GADA+ alpha RNAseq overlap"
+author: "Elliott Brooks"
+date: "2024-10-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readxl)
+library(data.table)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(org.Hs.eg.db)
+
+source("/Volumes/Brooks_02/Analysis/Brooks_etal_2024/Functions_2024/functionfile_Brooks_2024.R")
+
+
+```
+
+
+# GADA+ alpha RNAseq overlap
+
+## import dataset
+- pseudo-bulk RNAseq and DGE output data from alpha cells of non-diabetic individuals with and without GAD autoantibodies (GADA) was downloaded from the following publication.
+
+Doliba, N.M., Rozo, A.V., Roman, J., Qin, W., Traum, D., Gao, L., Liu, J., Manduchi, E., Liu, C., Golson, M.L. and Vahedi, G., 2022. α Cell dysfunction in islets from nondiabetic, glutamic acid decarboxylase autoantibody–positive individuals. The Journal of clinical investigation, 132(11).
+
+
+- Differential gene expression analysis of Nkx2.2 alpha cell KO cells and control alpha cells was done in another project in this repo named nkx2.2_KO_transcriptional_analysis
+
+~/figure_2/src/nkx2.2_KO_transcriptional_analyses/nkx2.2_alpha_KO_invivo_RNAseq_DESeq.Rmd 
+
+```{r}
+Doliba_GADA_alpha_DEGs <- 
+  read_csv("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/raw_data/Doliba_GADA_alpha_DEGs.txt", 
+    col_names = FALSE)
+
+
+Nkx2.2_invivo.alpha_KO_DESeq2_output <-
+  read.csv("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Nkx2.2_invivo.alpha_KO_DESeq2_output.csv")
+
+```
+
+## tidy
+```{r}
+Doliba_GADA_alpha_DEGs_tidy <- Doliba_GADA_alpha_DEGs %>%
+  separate(col = `X1`, into = c("gene_id", "rest"), sep = "^\\S*\\K\\s+") %>% # separate by first whitespace
+  separate(col = rest, into = c("rest", "padj"), sep = "\\s+(?=\\S*$)") %>% # separate by last whitespace
+  separate(col = rest, into = c("description", "logFC"), sep = "\\s+(?=\\S*$)") %>% # separate by last whitespace again
+  mutate(gene_id = str_replace(gene_id, "C11orf74", "IFTAP"))  %>% # replace with more common names
+  mutate(gene_id = str_replace(gene_id, "TMEM99", "KRT10-AS1"))
+
+
+
+
+symbols.entrezid2 <- bitr(Doliba_GADA_alpha_DEGs_tidy$gene_id, 
+                  fromType = "SYMBOL" , 
+                  toType = "ENTREZID", 
+                  OrgDb = "org.Hs.eg.db")
+
+Doliba_GADA_alpha_DEGs_tidy <- Doliba_GADA_alpha_DEGs_tidy %>%
+  left_join(., symbols.entrezid2, by = c("gene_id" = "SYMBOL"))
+
+
+
+  
+```
+
+
+
+# convert houman names to mouse names
+```{r}
+# download conversion table that has mouse and human gene homology equivalences 
+Mm_Hs_convert <- fread('http://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt') %>%
+  mutate(`EntrezGene ID` = as.character(`EntrezGene ID`))
+
+
+
+# create dataframes for joining homology data
+Mm_Hs_convert_concise <- Mm_Hs_convert %>%
+  dplyr::select(`DB Class Key`, `Common Organism Name`, `EntrezGene ID`) 
+
+Mm_Hs_convert_mouse_join <- Mm_Hs_convert %>%
+  dplyr::filter(`Common Organism Name` == "mouse, laboratory") %>%
+  dplyr::select(`DB Class Key`, Symbol)
+
+
+# join mouse homology data to human RNAseq DGE output
+
+Doliba_GADA_alpha_DEGs_tidy_ms.symb <- Doliba_GADA_alpha_DEGs_tidy %>%
+  mutate(ENTREZID = as.character(ENTREZID)) %>%
+  left_join(., Mm_Hs_convert_concise, by = c("ENTREZID" = "EntrezGene ID")) %>%
+  left_join(., Mm_Hs_convert_mouse_join, by = "DB Class Key") %>%
+  dplyr::filter(!str_detect(Symbol, "-"))
+  
+
+
+write.csv(Doliba_GADA_alpha_DEGs_tidy_ms.symb,
+          "/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Doliba_GADA_alpha_DEGs_tidy_ms.symb.csv")
+
+
+
+```
+
+
+
+# find overlpa between T1D and Nkx2.2 KD genes
+
+```{r}
+
+Nkx2.2_invivo.alpha_KO_DESeq2_filt_concise <- Nkx2.2_invivo.alpha_KO_DESeq2_output %>%
+  dplyr::filter(padj < 0.05) %>%
+  dplyr::select(symbol, log2FoldChange, padj)
+
+
+
+Doliba_GADA_alpha_DEGs_tidy_ms.symb_conscise <- Doliba_GADA_alpha_DEGs_tidy_ms.symb %>%
+  dplyr::select(Symbol, gene_id, logFC, padj)
+
+
+colnames(Doliba_GADA_alpha_DEGs_tidy_ms.symb_conscise) <- c("mouse_symbol", "human_symbol", "GADApos_logFC", "GADApos_padj")
+
+Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap <- Nkx2.2_invivo.alpha_KO_DESeq2_filt_concise %>%
+  left_join(., Doliba_GADA_alpha_DEGs_tidy_ms.symb_conscise, by = c("symbol" = "mouse_symbol")) %>%
+  mutate(GADA_overlap = if_else(!is.na(human_symbol),
+                               "GADApos_overlap",
+                               "no_overlap"))
+```
+
+
+## Summary of overlap
+
+```{r}
+Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_SUMM <- Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap %>%
+  group_by(GADA_overlap) %>%
+  summarize(count = n())
+
+
+
+
+```
+
+
+
+## Statistics
+
+```{r}
+# construct contingency table for GADApos data
+transcriptome_size <- 32066
+
+Doliba_GADA_alpha_DEGs_tidy_ms.symb_cont <- Doliba_GADA_alpha_DEGs_tidy_ms.symb %>%
+  summarise(count = n()) %>%
+  mutate(background_count = transcriptome_size,
+         names = "GADApos_DEG")
+
+# construct contingency table for Nkx2.2 alpha KO data
+Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_cont <- 
+  Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap %>%
+  group_by(GADA_overlap) %>%
+  summarize(count = n()) %>%
+  ungroup() %>%
+  pivot_wider(names_from = GADA_overlap, values_from = count) %>%
+  mutate(names = "GADApos_Nkx2.2KO_overlap")
+
+colnames(Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_cont)[1:2] <- c("count", "background_count")
+
+# combine contingency tables into a single table for stats
+Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_STAT <-
+  rbind(Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_cont, Doliba_GADA_alpha_DEGs_tidy_ms.symb_cont) %>%
+  dplyr::select(names, everything())
+
+# run hypergeometric test.
+Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_STAT_output <-
+  manyFishR(Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_STAT)
+
+```
+
+## Volcano plot
+
+- plots shows DGEs from Nkx2.2KO alpha cells with DGEs that were also dysregulated in alpha cells from non-diabetic GADA+/- colored in blue.
+- important overlaps are labeled.
+
+### Tidy data for plotting
+```{r}
+Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_join <- 
+  Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap %>%
+  dplyr::select(symbol, GADA_overlap)
+
+Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_plotting <- Nkx2.2_invivo.alpha_KO_DESeq2_output %>%
+  left_join(., Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_join) %>%
+  mutate(GADA_overlap = replace_na(GADA_overlap, "no_overlap"))
+
+```
+
+### make lists of import overlap genes that appear in both datasets
+```{r}
+
+GADA_genes <- c("Mafa", "Ffar4", "Cald1", "Rab3c")
+
+```
+
+### generate volcano plot
+```{r}
+alpha_Nkx2.2_KO_RNAseq_GADA.genes_volcano_plot <- 
+  Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_plotting %>%
+  dplyr::filter(log2FoldChange < 4 & log2FoldChange > -4,
+                -log10(padj) < 40) %>%
+  mutate(sig = if_else(padj <= 0.05 & !is.na(padj),
+                               "significant",
+                               "not_sig"),
+         GADA_overlap = factor(GADA_overlap,
+                              levels = c("GADApos_overlap",
+                                         "no_overlap"),
+                              labels = c("GADApos_overlap" = "GADA+ Affected Gene",
+                                         "no_overlap" = "Not Affected"))) %>%
+  arrange(desc(GADA_overlap)) %>%
+ggplot(aes(x = log2FoldChange, y = -log10(padj), 
+           color = GADA_overlap, 
+           size = GADA_overlap)) + 
+  geom_point() +
+  geom_text_repel(data = Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap_plotting, 
+                  aes(label = if_else(symbol %in% GADA_genes, 
+                                symbol,
+                                "")), 
+            color = "black", 
+            max.overlaps = Inf,
+            point.padding = .6,
+            box.padding = 1.1,
+            size = 4,
+            fontface = "bold",
+            min.segment.length = 0,
+            seed = 42) +
+  cowplot::theme_cowplot() +
+  scale_color_manual(values = c("GADA+ Affected Gene" = "#dd3497" ,
+                                "Not Affected" = "#bdbdbd")) +
+  scale_size_manual(values = c("GADA+ Affected Gene" = 3,
+                                "Not Affected" = 2)) +
+  labs(y = "Significance (-log10(adjusted p-value))",
+       color = "GADA+-related Gene Overlap") +
+  theme(aspect.ratio = 1,
+        axis.title = element_text(face = "bold")) +
+  xlim(-4.5, 4.5) +
+  ylim(0,32) +
+  guides(size = "none")
+
+# rasterize dots in scatter plot for easier use in adobe illustrator
+alpha_Nkx2.2_KO_RNAseq_GADA.genes_volcano_plot_rastr <-
+  rasterize(alpha_Nkx2.2_KO_RNAseq_GADA.genes_volcano_plot, 
+            layers = "Point", dpi = 300)
+  
+
+# Export
+
+tiff("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/alpha_Nkx2.2_KO_RNAseq_GADA.genes_volcano_plot.tiff", 
+     units = "in", width = 8, height = 8, 
+     res = 300, compression = "lzw")
+alpha_Nkx2.2_KO_RNAseq_GADA.genes_volcano_plot
+dev.off() 
+
+pdf("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/alpha_Nkx2.2_KO_RNAseq_GADA.genes_volcano_plot.pdf", 
+     width = 8, height = 8)
+alpha_Nkx2.2_KO_RNAseq_GADA.genes_volcano_plot_rastr
+dev.off() 
+
+```
+
+
+## Venn diagram
+- Venn diagram showing the overlap of DGEs found in Nkx2.2 KO alpha cells in mice and alpha cell from GADA+/- Humans.
+- p value in figure added in illustrator.
+```{r}
+# create vectors of DGEs in each data set
+alpha_KO_DEG_list <- Nkx2.2_invivo.alpha_KO_DESeq2_filt_GADApos_overlap$symbol %>% unique()
+
+alpha_GADA_list <- Doliba_GADA_alpha_DEGs_tidy_ms.symb$Symbol %>% unique()
+
+# merge vectors into a list for plotting
+alpha_KO.DEG.GADA_list <- list("Nkx2.2 \u03B1 KO" = alpha_KO_DEG_list,
+                            "GADA+ \u03B1 cells" = alpha_GADA_list)
+
+# Plot Venn Diagram
+alpha_KO.DEG.GADA_plot <- ggvenn(alpha_KO.DEG.GADA_list, 
+                             show_percentage = FALSE, 
+                             text_size = 12, 
+                             fill_color = c("#74c476", "#dd3497"))
+
+#export
+tiff("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/Nkx2.2_KO_GADA.alpha_overlap_Venn.tiff", 
+     units = "in", width = 6, height = 6, 
+     res = 300, compression = "lzw")
+alpha_KO.DEG.GADA_plot
+dev.off() 
+
+pdf("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/plots/Nkx2.2_KO_GADA.alpha_overlap_Venn.pdf", 
+     width = 6, height = 6)
+alpha_KO.DEG.GADA_plot
+dev.off() 
+
+```
+
