@@ -1,0 +1,123 @@
+---
+title: "nkx22_gcgicre_5wk_mafb"
+author: "Elliott Brooks"
+date: "2/20/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(tidyverse)
+library(ggplot2)
+library(cowplot)
+library(viridis)
+library(imputeTS)
+library(BSDA)
+library(ggsignif)
+library(car)
+```
+
+
+# data import
+
+```{r}
+nkx2_2_fl_5wk_gcg_mafb_islet_score <- read_csv("/Volumes/Elliott_Brooks/backup/nkx_image_data/data/nkx2.2_fl_5wk_gcg_mafb_islet_score.csv") 
+```
+# mafb expression in gcg tom cells: calculations, Summaries and Stats
+
+## Calculations
+- find proportion of alpha cell with MafB expression
+```{r}
+nkx2_2_fl_5wk_gcg_mafb_islet_score_calcs <- nkx2_2_fl_5wk_gcg_mafb_islet_score %>%
+  dplyr::filter(!is.na(Gcg_only)) %>%
+  mutate(mafb_gcg_tom_proportion = tom_mafb_gcg/(Gcg_Tom+tom_mafb_gcg)) %>%
+  dplyr::filter(!is.nan(mafb_gcg_tom_proportion))
+```
+
+## Summaries
+```{r}
+
+nkx2_2_fl_5wk_gcg_mafb_islet_score_SUMM <- nkx2_2_fl_5wk_gcg_mafb_islet_score_calcs %>%
+  group_by(Genotype, Animal) %>%
+  summarize(mafb_gcg_tom_proportion_mean = mean(mafb_gcg_tom_proportion),
+            mafb_gcg_tom_proportion_sd = sd(mafb_gcg_tom_proportion),
+            mafb_gcg_tom_proportion_se = sd(mafb_gcg_tom_proportion)/sqrt(n()))
+  
+```
+
+## Statistics: perform t-test between Mafb expression in mutants and controls
+```{r}
+
+
+#Data was split into separate dataframes by genotype for stats function input
+Mut_mafb.expression <- nkx2_2_fl_5wk_gcg_mafb_islet_score_SUMM %>%
+  dplyr::filter(Genotype == "nkx2.2flfl_gcg.icre_tomato")
+
+CON_mafb.expression <- nkx2_2_fl_5wk_gcg_mafb_islet_score_SUMM %>%
+  dplyr::filter(Genotype == "nkx2.2plus.plus_gcg.icre_tomato")
+
+# QQ plot and Shapiro test to check for normality
+
+qqPlot(nkx2_2_fl_5wk_gcg_mafb_islet_score_SUMM$mafb_gcg_tom_proportion_mean)
+
+shapiro.test(nkx2_2_fl_5wk_gcg_mafb_islet_score_SUMM$mafb_gcg_tom_proportion_mean)
+
+
+# perform t-test
+ttest_mafb.expression.prop_mut.con <- t.test(x = Mut_mafb.expression$mafb_gcg_tom_proportion_mean, 
+                                             y = CON_mafb.expression$mafb_gcg_tom_proportion_mean)
+
+# tidy p-value for plotting
+ttest_mafb.expression.prop_mut.con_p.value <- round(as.numeric(ttest_mafb.expression.prop_mut.con[3]), digits = 3) #print p-value
+
+
+
+```
+
+
+## PLOT: MafB expression in Glucagon+/Tomato+ cells
+```{r}
+Mafb_gcg.tom_summ.plot <- nkx2_2_fl_5wk_gcg_mafb_islet_score_SUMM %>%
+  group_by(Genotype) %>%
+  summarize(mafb_gcg_tom_proportion_se = sd(mafb_gcg_tom_proportion_mean)/sqrt(n()),
+            mafb_gcg_tom_proportion_mean = mean(mafb_gcg_tom_proportion_mean)) %>%
+  ggplot(aes(x = fct_relevel(Genotype, "nkx2.2plus.plus_gcg.icre_tomato", "nkx2.2flfl_gcg.icre_tomato"),
+             y = mafb_gcg_tom_proportion_mean, fill = Genotype)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_jitter(data = nkx2_2_fl_5wk_gcg_mafb_islet_score_SUMM, 
+              aes(x = Genotype, y = mafb_gcg_tom_proportion_mean), size = 2, width = .1, color = "#525252") +
+   geom_signif(comparisons = list(c(1,2)),
+      annotations = paste0("p =", ttest_mafb.expression.prop_mut.con_p.value),
+      tip_length = 0) +
+  geom_errorbar(aes(ymin = mafb_gcg_tom_proportion_mean - mafb_gcg_tom_proportion_se, 
+                    ymax = mafb_gcg_tom_proportion_mean + mafb_gcg_tom_proportion_se), width=.2,
+                position=position_dodge(.9)) +
+  theme_cowplot() +
+  theme(axis.title = element_text(face = "bold"),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text = element_text(face = "bold"),
+        legend.position = "none") +
+  labs(y = "% MAFB Expression in GCG+/TOM+ Cells") +
+  scale_fill_manual(values = c("nkx2.2plus.plus_gcg.icre_tomato" = "#878787",
+                               "nkx2.2flfl_gcg.icre_tomato" = "#1a9641")) +
+    scale_y_continuous(labels = scales::percent, limits = c(0,1))
+
+
+# export
+tiff(filename = paste0("/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_MAFB_gcg.tom_summ.plot.stats.tiff"), 
+     units = "in", width = 3, height = 4, 
+     res = 300, compression = "lzw")
+Mafb_gcg.tom_summ.plot
+dev.off()
+
+
+pdf(file = paste0("/Volumes/Elliott_Brooks/backup/nkx_image_data/img/5wk_MAFB_gcg.tom_summ.plot.stats.pdf"), 
+     width = 3, height = 4)
+Mafb_gcg.tom_summ.plot
+dev.off()
+
+
+```
