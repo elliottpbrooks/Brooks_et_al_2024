@@ -248,6 +248,7 @@ nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_SUMM <- nkx2.2_alpha_KO_seq_fol
 ## STATISTICS
 
 ```{r}
+# create contingency table for T1D data
 T1D.alpha_seq_foldchange_stat <- T1D.alpha_seq_foldchange %>%
   mutate(diff.expression = if_else(pvalue <= 0.01,
                                    "DEG",
@@ -262,31 +263,28 @@ T1D.alpha_seq_foldchange_stat <- T1D.alpha_seq_foldchange %>%
 
 colnames(T1D.alpha_seq_foldchange_stat)[2:3] <- c("count", "background_count")
 
-
+# create contingency table for Nkx2.2 alpha KO data
 nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_STAT <- 
   nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_SUMM %>%
   ungroup() %>%
-  #dplyr::select(-proportion) %>%
-  #dplyr::filter(direct_target == "direct_target") %>%
-  #unite(c(T1D_overlap, direct_target), col = "temp", sep = "|") %>%
   mutate(names = "Nkx2.2_KO_alpha") %>%
   pivot_wider(names_from = T1D_overlap, values_from = count)
 
 colnames(nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_STAT)[2:3] <- c("count", "background_count")
 
 
-
+# combine cont. tables into one table
 Nkx2.2_KO_T1D.alpha_overlap_STAT <- rbind(T1D.alpha_seq_foldchange_stat, 
       nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_STAT)
 
-
+# perform hypergeometric test using my function.
 Nkx2.2_KD_T1D.alpha_overlap_STAT_outpt <- manyFishR(Nkx2.2_KO_T1D.alpha_overlap_STAT)
 
 
 
-#######
+####### padj
 
-
+# create contingency table for T1D data
 T1D.alpha_seq_foldchange_stat_padj <- T1D.alpha_seq_foldchange %>%
   mutate(diff.expression = if_else(padj <= 0.05,
                                    "DEG",
@@ -302,12 +300,10 @@ T1D.alpha_seq_foldchange_stat_padj <- T1D.alpha_seq_foldchange %>%
 colnames(T1D.alpha_seq_foldchange_stat_padj)[2:3] <- c("count", "background_count")
 
 
+# create contingency table for Nkx2.2 alpha KO data
 nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_STAT <- 
   nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_SUMM %>%
   ungroup() %>%
-  #dplyr::select(-proportion) %>%
-  #dplyr::filter(direct_target == "direct_target") %>%
-  #unite(c(T1D_overlap, direct_target), col = "temp", sep = "|") %>%
   mutate(names = "Nkx2.2_KO_alpha") %>%
   pivot_wider(names_from = T1D_overlap, values_from = count)
 
@@ -315,18 +311,25 @@ colnames(nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_STAT)[2:3] <- c("count
 
 
 
-
+# combine cont. tables into one table
 Nkx2.2_KO_T1D.alpha_overlap_padj_STAT <- rbind(T1D.alpha_seq_foldchange_stat_padj, 
       nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_STAT)
 
-
+# perform hypergeometric test using my function.
 Nkx2.2_KD_T1D.alpha_overlap_padj_STAT_outpt <- manyFishR(Nkx2.2_KO_T1D.alpha_overlap_padj_STAT)
 
 ```
 
+
+
 # Plots
 
-## volcano plot
+## Volcano plot
+
+- plots shows DGEs from Nkx2.2KO alpha cells with DGEs that were also dysregulated in alpha cells from T1D individuals colored in blue.
+- important overlaps are labled.
+
+### Tidy data for plotting
 ```{r}
 
 nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_join <- nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes %>%
@@ -339,14 +342,19 @@ Nkx2.2_invivo.alpha_KO_DESeq2_output_T1D.genes <- Nkx2.2_invivo.alpha_KO_DESeq2_
                                "T1D_overlap",
                                T1D_overlap))
 
+```
 
-
-####
+### make lists of import overlap genes that appear in both datasets
+```{r}
 
 T1D_genes_down <- c("Gpr119", "Mafb", "Slc38a4", "Robo2", "Avpr1b", "Etv1", "Slc30a8", "Gcg")
 
 T1D_genes_up <- c("Chgb",  "Cacna1i", "Isl1", "Insig1", "Gprc5b", "Ins1", "Ins2", "Iapp")
 
+```
+
+### generate volcano plot
+```{r}
 
 alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot <- Nkx2.2_invivo.alpha_KO_DESeq2_output_T1D.genes %>%
   dplyr::filter(log2FoldChange < 4 & log2FoldChange > -4,
@@ -369,17 +377,13 @@ ggplot(aes(x = log2FoldChange, y = -log10(padj),
                                 symbol,
                                 "")), 
             color = "black", 
-            #position = position_jitter(seed = 30),
             max.overlaps = Inf,
             point.padding = .6,
             box.padding = 1.1,
-            #max.time = 5,
-            #force = 5,
             nudge_x = -1.25,
             force_pull = 0.5,
             size = 4,
             fontface = "bold",
-            #ylim = c(-1, 22),
             min.segment.length = 0,
             seed = 42) +
   geom_text_repel(data = Nkx2.2_invivo.alpha_KO_DESeq2_output_T1D.genes, 
@@ -387,17 +391,13 @@ ggplot(aes(x = log2FoldChange, y = -log10(padj),
                                 symbol,
                                 "")), 
             color = "black", 
-            #position = position_jitter(seed = 30),
             max.overlaps = Inf,
             point.padding = .6,
             box.padding = 1.1,
-            #max.time = 5,
-            #force = 5,
             nudge_x = 1.25,
             force_pull = 0.5,
             size = 4,
             fontface = "bold",
-            #ylim = c(-1, 22),
             min.segment.length = 0,
             seed = 43) +
   cowplot::theme_cowplot() +
@@ -413,9 +413,13 @@ ggplot(aes(x = log2FoldChange, y = -log10(padj),
   ylim(0,32) +
   guides(size = "none")
 
+
+# rasterize dots in scatter plot for easier use in adobe illustrator
 alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot_rastr <- rasterize(alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot, 
                                                                  layers = "Point", dpi = 300)
   
+
+# Export
 
 tiff("/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/plots/alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot.tiff", 
      units = "in", width = 8, height = 8, 
@@ -432,19 +436,25 @@ dev.off()
 
 
 ## Venn diagram
+- Venn diagram showing the overlap of DGEs found in Nkx2.2 KO alpha cells in mice and alpha cell from T1D Humans.
+- p value in figure added in illustrator.
 ```{r}
+# create vectors of DGEs in each data set
 alpha_KO_DEG_list <- nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes$symbol %>% unique()
 
 alpha_T1D_list <- T1D.alpha_seq_pval_ms.symb$Symbol %>% unique()
 
-
+# merge vectors into a list for plotting
 alpha_KO.DEG.T1D_list <- list("Nkx2.2 \u03B1 KO" = alpha_KO_DEG_list,
                             "T1D \u03B1 cells" = alpha_T1D_list)
 
+# Plot Venn Diagram
 alpha_KO.DEG.T1D_plot <- ggvenn(alpha_KO.DEG.T1D_list, 
                              show_percentage = FALSE, 
                              text_size = 12, 
                              fill_color = c("#74c476", "#3690c0"))
+
+#export
 
 tiff("/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/plots/Nkx2.2_KO_T1D.alpha_overlap_Venn.tiff", 
      units = "in", width = 6, height = 6, 
