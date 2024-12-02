@@ -1,0 +1,462 @@
+---
+title: "Brissova_alphaT1D_DGE.analysis"
+author: "Elliott Brooks"
+date: "7/20/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
+
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(RColorBrewer)
+library(cowplot)
+library(ggrepel)
+library(ggvenn)
+library(pheatmap)
+library(viridis)
+
+
+
+library("DESeq2")
+library(ggrepel)
+library(readxl)
+library(dplyr)
+library(readr)
+library(ggrastr)
+
+library(data.table)
+
+source("/Volumes/Brooks_02/Analysis/Brooks_etal_2024/Functions_2024/functionfile_Brooks_2024.R")
+
+```
+
+# Data import
+
+- Counts table for RNA-seq of human alpha cells from individuals with and without T1D was downloaded off of the NIH Geo database but was published here:
+
+Brissova, M., Haliyur, R., Saunders, D., Shrestha, S., Dai, C., Blodgett, D.M., Bottino, R., Campbell-Thompson, M., Aramandla, R., Poffenberger, G. and Lindner, J., 2018. α cell function and gene expression are compromised in type 1 diabetes. Cell reports, 22(10), pp.2667-2676.
+
+- Differential gene expression analysis of Nkx2.2 alpha cell KO cells and control alpha cells was done in another project in this repo named nkx2.2_KO_transcriptional_analysis
+
+~/figure_2/src/nkx2.2_KO_transcriptional_analyses/nkx2.2_alpha_KO_invivo_RNAseq_DESeq.Rmd 
+
+```{r}
+# download counts table for alpha cell T1D RNAseq data
+urld <- "https://www.ncbi.nlm.nih.gov/geo/download/?format=file&type=rnaseq_counts"
+path <- paste(urld, "acc=GSE106148", "file=GSE106148_raw_counts_GRCh38.p13_NCBI.tsv.gz", sep="&");
+tbl <- as.matrix(data.table::fread(path, header=T, colClasses="integer"), rownames=1)
+
+
+#import Nkx2.2 KO alpha cell DGE output
+Nkx2.2_invivo.alpha_KO_DESeq2_padj.filt <-
+  read.csv("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Nkx2.2_invivo.alpha_KO_DESeq2_output_padj.filt.csv")
+
+Nkx2.2_invivo.alpha_KO_DESeq2_output <-
+  read.csv("/Volumes/Brooks_02/Analysis/invivo_Nkx2.2_alpha_KO_RNAseq/results/output_data/Nkx2.2_invivo.alpha_KO_DESeq2_output.csv")
+
+
+```
+
+
+
+# DESeq2: Perform Differtial Gene Expression analysis on the human alpha T1D RNA-seq
+
+## Set metadata for analysis
+```{r}
+
+condition = c("non_DB", "non_DB","non_DB", "non_DB", "non_DB",
+                 "T1D", "T1D", "T1D")
+samples <- c("GSM2830482", "GSM2830483", "GSM2830484", "GSM2830485", "GSM2830486", "GSM2830487", "GSM2830488", "GSM2830489")
+
+
+
+colData <- data.frame(row.names = samples, condition = condition)
+
+colData$condition <- factor(colData$condition)
+
+```
+
+## Generate DESeq Dataset from counts matrix and metadata
+```{r}
+ddsHTSeq <- DESeqDataSetFromMatrix(countData = tbl,
+             colData = colData,
+             design = ~condition)
+
+```
+
+
+## Run differenital Analysis
+```{r}
+
+dds = DESeq(ddsHTSeq)
+
+```
+
+## Get differential expression results
+```{r, Results 1}
+#Get results from the dds_batch with adjusted p-value < 0.05
+res <- results(dds)
+table(res$padj!=0)
+table(res$padj<0.05)
+
+#Order the samples by the adjusted p-value
+res = res[order(res$padj),]
+
+#merge res with the normalized count data which allows you to view basemean normalized values for each sample
+resdata = merge(as.data.frame(res), as.data.frame(counts(dds, normalized =TRUE)), by="row.names", sort = FALSE)
+
+resdata_filt <- resdata %>% dplyr::filter(padj <= 0.05)
+```
+
+## convert entrez IDs into gene symbols
+```{r}
+names(resdata)[1]="entrezid"
+
+
+symbols.entrezid2 <- bitr(resdata$entrezid, 
+                  fromType = "ENTREZID", 
+                  toType = "SYMBOL", 
+                  OrgDb = "org.Hs.eg.db")
+
+T1D.alpha_seq_foldchange <- resdata %>%
+  left_join(., symbols.entrezid2, by = c("entrezid" = "ENTREZID"))
+
+
+#write the results to a csv file 
+write.csv(T1D.alpha_seq_foldchange, file="/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/output_data/Nkx2.2_aTC_KD_DESeq2_output_deseq2.csv")
+```
+
+## Filter DEG output by significance
+```{r}
+
+T1D.alpha_seq_padj <- T1D.alpha_seq_foldchange %>% 
+  dplyr::filter(padj <= 0.05)
+
+T1D.alpha_seq_pval <- T1D.alpha_seq_foldchange %>% 
+  dplyr::filter(pvalue <= 0.01)
+
+write.csv(T1D.alpha_seq_pval, file="/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/output_data/T1D.alpha_seq_pval.csv")
+
+write.csv(T1D.alpha_seq_padj, file="/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/output_data/T1D.alpha_seq_padj.csv")
+```
+
+
+# convert human names to mouse names
+```{r}
+# download conversion table that has mouse and human gene homology equivalences 
+Mm_Hs_convert <- fread('http://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt') %>%
+  mutate(`EntrezGene ID` = as.character(`EntrezGene ID`))
+
+
+# create dataframes for joining homology data
+Mm_Hs_convert_concise <- Mm_Hs_convert %>%
+  dplyr::select(`DB Class Key`, `Common Organism Name`, `EntrezGene ID`) 
+
+Mm_Hs_convert_mouse_join <- Mm_Hs_convert %>%
+  dplyr::filter(`Common Organism Name` == "mouse, laboratory") %>%
+  dplyr::select(`DB Class Key`, Symbol)
+
+
+
+# join mouse homology data to human RNAseq DGE output
+
+T1D.alpha_seq_pval_ms.symb <- T1D.alpha_seq_pval %>%
+  mutate(entrezid = as.character(entrezid)) %>%
+  left_join(., Mm_Hs_convert_concise, by = c("entrezid" = "EntrezGene ID")) %>%
+  left_join(., Mm_Hs_convert_mouse_join, by = "DB Class Key")
+
+write.csv(T1D.alpha_seq_pval_ms.symb,
+          "/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/output_data/T1D.alpha_seq_pval_mouse.symbols.csv")
+
+
+
+
+T1D.alpha_seq_padj_ms.symb <- T1D.alpha_seq_padj %>%
+  mutate(entrezid = as.character(entrezid)) %>%
+  left_join(., Mm_Hs_convert_concise, by = c("entrezid" = "EntrezGene ID")) %>%
+  left_join(., Mm_Hs_convert_mouse_join, by = "DB Class Key")
+  
+write.csv(T1D.alpha_seq_padj_ms.symb,
+          "/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/output_data/T1D.alpha_seq_padj_mouse.symbols.csv")
+
+
+
+T1D.alpha_seq_foldchange_ms.symb <- T1D.alpha_seq_foldchange %>%
+  mutate(entrezid = as.character(entrezid)) %>%
+  left_join(., Mm_Hs_convert_concise, by = c("entrezid" = "EntrezGene ID")) %>%
+  left_join(., Mm_Hs_convert_mouse_join, by = "DB Class Key") %>%
+  dplyr::filter(!is.na(pvalue))
+  
+write.csv(T1D.alpha_seq_foldchange_ms.symb,
+          "/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/output_data/T1D.alpha_seq_foldchange_ms.symb.csv")
+```
+
+# Integrative analsysis: overlap between T1D and Nkx2.2 KO alpha genes
+
+## find overlaps between datasets
+```{r}
+
+T1D.alpha_seq_pval_ms.symb_conscise <- T1D.alpha_seq_pval_ms.symb %>%
+  dplyr::select(Symbol, SYMBOL, log2FoldChange, pvalue, padj)
+
+
+colnames(T1D.alpha_seq_pval_ms.symb_conscise)[1:2] <- c("mouse_symbol", "human_symbol")
+
+nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes <- Nkx2.2_invivo.alpha_KO_DESeq2_padj.filt %>%
+  dplyr::select(symbol, log2FoldChange, padj) %>%
+  left_join(., T1D.alpha_seq_pval_ms.symb_conscise, by = c("symbol" = "mouse_symbol")) %>%
+  mutate(T1D_overlap = if_else(!is.na(human_symbol),
+                               "T1D_overlap",
+                               "no_overlap"))
+#######
+
+T1D.alpha_seq_padj_ms.symb_conscise <- T1D.alpha_seq_padj_ms.symb %>%
+  dplyr::select(Symbol, SYMBOL, log2FoldChange, pvalue, padj)
+
+
+colnames(T1D.alpha_seq_padj_ms.symb_conscise)[1:2] <- c("mouse_symbol", "human_symbol")
+
+nkx2.2_alpha_KO_seq_foldchange_FDR_padj.T1Dgenes <- Nkx2.2_invivo.alpha_KO_DESeq2_padj.filt %>%
+  dplyr::select(symbol, log2FoldChange, padj) %>%
+  left_join(., T1D.alpha_seq_padj_ms.symb_conscise, by = c("symbol" = "mouse_symbol")) %>%
+  mutate(T1D_overlap = if_else(!is.na(human_symbol),
+                               "T1D_overlap",
+                               "no_overlap"))
+```
+
+## Summary dataframes
+
+```{r}
+nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_SUMM <- nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes %>%
+  group_by(T1D_overlap) %>%
+  summarize(count = n())
+
+
+nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_SUMM <- nkx2.2_alpha_KO_seq_foldchange_FDR_padj.T1Dgenes %>%
+  group_by(T1D_overlap) %>%
+  summarize(count = n())
+
+```
+
+
+
+## STATISTICS
+
+```{r}
+T1D.alpha_seq_foldchange_stat <- T1D.alpha_seq_foldchange %>%
+  mutate(diff.expression = if_else(pvalue <= 0.01,
+                                   "DEG",
+                                   "not_different")) %>%
+  dplyr::filter(!is.na(pvalue)) %>%
+  group_by(diff.expression) %>%
+  summarize(count = n()) %>%
+  ungroup() %>%
+  mutate(names = "T1D_alpha") %>%
+  pivot_wider(names_from = diff.expression, values_from = count) 
+
+
+colnames(T1D.alpha_seq_foldchange_stat)[2:3] <- c("count", "background_count")
+
+
+nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_STAT <- 
+  nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_SUMM %>%
+  ungroup() %>%
+  #dplyr::select(-proportion) %>%
+  #dplyr::filter(direct_target == "direct_target") %>%
+  #unite(c(T1D_overlap, direct_target), col = "temp", sep = "|") %>%
+  mutate(names = "Nkx2.2_KO_alpha") %>%
+  pivot_wider(names_from = T1D_overlap, values_from = count)
+
+colnames(nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_STAT)[2:3] <- c("count", "background_count")
+
+
+
+Nkx2.2_KO_T1D.alpha_overlap_STAT <- rbind(T1D.alpha_seq_foldchange_stat, 
+      nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_STAT)
+
+
+Nkx2.2_KD_T1D.alpha_overlap_STAT_outpt <- manyFishR(Nkx2.2_KO_T1D.alpha_overlap_STAT)
+
+
+
+#######
+
+
+T1D.alpha_seq_foldchange_stat_padj <- T1D.alpha_seq_foldchange %>%
+  mutate(diff.expression = if_else(padj <= 0.05,
+                                   "DEG",
+                                   "not_different")) %>%
+  dplyr::filter(!is.na(padj)) %>%
+  group_by(diff.expression) %>%
+  summarize(count = n()) %>%
+  ungroup() %>%
+  mutate(names = "T1D_alpha") %>%
+  pivot_wider(names_from = diff.expression, values_from = count) 
+
+
+colnames(T1D.alpha_seq_foldchange_stat_padj)[2:3] <- c("count", "background_count")
+
+
+nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_STAT <- 
+  nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_SUMM %>%
+  ungroup() %>%
+  #dplyr::select(-proportion) %>%
+  #dplyr::filter(direct_target == "direct_target") %>%
+  #unite(c(T1D_overlap, direct_target), col = "temp", sep = "|") %>%
+  mutate(names = "Nkx2.2_KO_alpha") %>%
+  pivot_wider(names_from = T1D_overlap, values_from = count)
+
+colnames(nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_STAT)[2:3] <- c("count", "background_count")
+
+
+
+
+Nkx2.2_KO_T1D.alpha_overlap_padj_STAT <- rbind(T1D.alpha_seq_foldchange_stat_padj, 
+      nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_padj_STAT)
+
+
+Nkx2.2_KD_T1D.alpha_overlap_padj_STAT_outpt <- manyFishR(Nkx2.2_KO_T1D.alpha_overlap_padj_STAT)
+
+```
+
+# Plots
+
+## volcano plot
+```{r}
+
+nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_join <- nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes %>%
+  dplyr::select(symbol, T1D_overlap)
+
+Nkx2.2_invivo.alpha_KO_DESeq2_output_T1D.genes <- Nkx2.2_invivo.alpha_KO_DESeq2_output %>%
+  left_join(., nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes_join) %>%
+  mutate(T1D_overlap = replace_na(T1D_overlap, "no_overlap"),
+         T1D_overlap = if_else(symbol == "Gcg",
+                               "T1D_overlap",
+                               T1D_overlap))
+
+
+
+####
+
+T1D_genes_down <- c("Gpr119", "Mafb", "Slc38a4", "Robo2", "Avpr1b", "Etv1", "Slc30a8", "Gcg")
+
+T1D_genes_up <- c("Chgb",  "Cacna1i", "Isl1", "Insig1", "Gprc5b", "Ins1", "Ins2", "Iapp")
+
+
+alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot <- Nkx2.2_invivo.alpha_KO_DESeq2_output_T1D.genes %>%
+  dplyr::filter(log2FoldChange < 4 & log2FoldChange > -4,
+                -log10(padj) < 40) %>%
+  mutate(sig = if_else(padj <= 0.05 & !is.na(padj),
+                               "significant",
+                               "not_sig"),
+         T1D_overlap = factor(T1D_overlap,
+                              levels = c("T1D_overlap",
+                                         "no_overlap"),
+                              labels = c("T1D_overlap" = "T1D Affected Gene",
+                                         "no_overlap" = "Not Affected"))) %>%
+  arrange(desc(T1D_overlap)) %>%
+ggplot(aes(x = log2FoldChange, y = -log10(padj), 
+           color = T1D_overlap, 
+           size = T1D_overlap)) + 
+  geom_point() +
+  geom_text_repel(data = Nkx2.2_invivo.alpha_KO_DESeq2_output_T1D.genes, 
+                  aes(label = if_else(symbol %in% T1D_genes_down, 
+                                symbol,
+                                "")), 
+            color = "black", 
+            #position = position_jitter(seed = 30),
+            max.overlaps = Inf,
+            point.padding = .6,
+            box.padding = 1.1,
+            #max.time = 5,
+            #force = 5,
+            nudge_x = -1.25,
+            force_pull = 0.5,
+            size = 4,
+            fontface = "bold",
+            #ylim = c(-1, 22),
+            min.segment.length = 0,
+            seed = 42) +
+  geom_text_repel(data = Nkx2.2_invivo.alpha_KO_DESeq2_output_T1D.genes, 
+                  aes(label = if_else(symbol %in% T1D_genes_up, 
+                                symbol,
+                                "")), 
+            color = "black", 
+            #position = position_jitter(seed = 30),
+            max.overlaps = Inf,
+            point.padding = .6,
+            box.padding = 1.1,
+            #max.time = 5,
+            #force = 5,
+            nudge_x = 1.25,
+            force_pull = 0.5,
+            size = 4,
+            fontface = "bold",
+            #ylim = c(-1, 22),
+            min.segment.length = 0,
+            seed = 43) +
+  cowplot::theme_cowplot() +
+  scale_color_manual(values = c("T1D Affected Gene" = "#2b8cbe" ,
+                                "Not Affected" = "#bdbdbd")) +
+  scale_size_manual(values = c("T1D Affected Gene" = 3,
+                                "Not Affected" = 2)) +
+  labs(y = "Significance (-log10(adjusted p-value))",
+       color = "T1D-related Gene Overlap") +
+  theme(aspect.ratio = 1,
+        axis.title = element_text(face = "bold")) +
+  xlim(-4.5, 4.5) +
+  ylim(0,32) +
+  guides(size = "none")
+
+alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot_rastr <- rasterize(alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot, 
+                                                                 layers = "Point", dpi = 300)
+  
+
+tiff("/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/plots/alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot.tiff", 
+     units = "in", width = 8, height = 8, 
+     res = 300, compression = "lzw")
+alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot
+dev.off() 
+
+pdf("/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/plots/alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot.pdf", 
+     width = 8, height = 8)
+alpha_Nkx2.2_KO_RNAseq_T1D.genes_volcano_plot_rastr
+dev.off() 
+
+```
+
+
+## Venn diagram
+```{r}
+alpha_KO_DEG_list <- nkx2.2_alpha_KO_seq_foldchange_FDR_T1Dgenes$symbol %>% unique()
+
+alpha_T1D_list <- T1D.alpha_seq_pval_ms.symb$Symbol %>% unique()
+
+
+alpha_KO.DEG.T1D_list <- list("Nkx2.2 \u03B1 KO" = alpha_KO_DEG_list,
+                            "T1D \u03B1 cells" = alpha_T1D_list)
+
+alpha_KO.DEG.T1D_plot <- ggvenn(alpha_KO.DEG.T1D_list, 
+                             show_percentage = FALSE, 
+                             text_size = 12, 
+                             fill_color = c("#74c476", "#3690c0"))
+
+tiff("/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/plots/Nkx2.2_KO_T1D.alpha_overlap_Venn.tiff", 
+     units = "in", width = 6, height = 6, 
+     res = 300, compression = "lzw")
+alpha_KO.DEG.T1D_plot
+dev.off() 
+
+pdf("/Volumes/Elliott_Brooks/Brissova_alphaT1D_RNAseq/results/plots/Nkx2.2_KO_T1D.alpha_overlap_Venn.pdf", 
+     width = 6, height = 6)
+alpha_KO.DEG.T1D_plot
+dev.off() 
+
+```
+
+
