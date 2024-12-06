@@ -10,7 +10,7 @@ For example, 'figure_1' contains files related to figure 1 and supplemental figu
 - figure_2: Nkx2.2 alpha cell KO in vivo sorted alpha cell bulk RNA-seq and comparison to previoulsy published Nkx2.2 beta cell KO RNA-seq.
 - figure_3: NKX2.2 binding assays in alpha cells and comparison to NKX2.2 binding in beta cells and transcription factor motif analysis within NKX2.2 binding sites.
 - figure_4: NKX2.2 and KLF4 binding in alpha cells at Irx2 and Mafb promoters, NKX2.2 binding in Klf4 knockdown alpha cells
-- figure_5:
-- figure_6
+- figure_5: Klf4 alpha cell KO whole islet RNA-seq and comparison to Nkx2.2 alpha cell KO RNA-seq
+- figure_6: Bulk ATAC-seq, bulk RNA-seq and NKX2.2 binding analyses of Klf4 Overexpression in mouse beta cells
 
 !!This repo is currently being developed, thus some subdirectories for certain figures may not be available in full, yet!!
